@@ -1,0 +1,23 @@
+[package]
+name = "bgmtv"
+version = "0.1.0"
+authors = ["Liu Xiaoyi <circuitcoder0@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+reqwest = "0.9.5"
+serde = "1.0.82"
+serde_derive = "1.0.82"
+hyper = "0.12.19"
+serde_json = "1.0.33"
+futures = "0.1.25"
+tokio = "0.1.13"
+url = "1.7.2"
+
+[[bin]]
+name = "bgmtty"
+path = "src/bin.rs"
+
+[lib]
+name = "bgmtv"
+path = "src/lib.rs"
