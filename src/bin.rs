@@ -1,4 +1,4 @@
-use bgmtv::auth::{request_code, request_token, AppCred};
+use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
 use bgmtv::settings::Settings;
 use futures::future::Future;
 use tokio;
@@ -12,7 +12,7 @@ use failure::Error;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
-    buf.push("bgmtty.toml");
+    buf.push("bgmtty.yml");
     match buf.canonicalize() {
         Ok(can) => can,
         Err(_) => buf,
@@ -89,7 +89,8 @@ fn main() {
         }
     };
 
-    let cred = settings.cred().clone();
+    let set = settings.clone();
+    let cred = set.cred().clone();
     let fut = request_code(cred.get_client_id())
         .map_err(|e| println!("{:#?}", e))
         .and_then(|(code, redirect)| {
@@ -101,6 +102,17 @@ fn main() {
             )
             .map_err(|e| println!("{}", e))
         })
-        .map(|resp| println!("{:#?}", resp));
+        .map(|resp| {
+            println!("{:#?}", resp);
+            match resp {
+                AuthResp::Success(info) => {
+                    let newset = set.update_auth(info);
+                    newset.save_to(default_path()).expect(&"Failed to save config!".red().bold());
+                },
+                _ => {
+                    println!("{}", &"Login failed! Please check your OAuth credentials and try again.".red().bold())
+                }
+            }
+        });
     tokio::run(fut);
 }

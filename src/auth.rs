@@ -14,7 +14,7 @@ use std::str;
 use url::form_urlencoded;
 use serde_derive::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AuthInfo {
     access_token: String,
     user_id: u64,
