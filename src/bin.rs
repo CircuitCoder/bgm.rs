@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::convert::AsRef;
 use std::io::{Write, BufRead};
 use colored::*;
+use clap;
+use failure::Error;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -15,6 +17,10 @@ fn default_path() -> impl AsRef<Path> {
         Ok(can) => can,
         Err(_) => buf,
     }
+}
+
+fn load_settings() -> Result<Settings, Error> {
+    Settings::load_from(default_path())
 }
 
 fn init_credentials() {
@@ -48,23 +54,48 @@ fn init_credentials() {
     let parent = path.as_ref().parent();
 
     if let Some(parent) = parent {
-        std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).expect(&"Permission denied!".red().bold());
     }
 
-    settings.save_to(path).expect("Failed to save config!");
+    settings.save_to(path).expect(&"Failed to save config!".red().bold());
 
     print!("{}", "Done! Now you can run bgmTTY again without the --init flag to perform a OAuth login.".green().bold())
 }
 
 fn main() {
-    init_credentials();
-    /*
-    let fut = request_code(CLIENT_ID)
+    let matches = clap::App::new("bgmTTY")
+        .version(env!("CARGO_PKG_VERSION"))
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .about("bgm.tv on term")
+        .arg(clap::Arg::with_name("init")
+             .long("init")
+             .help("(Re)initialize OAuth credentials"))
+        .get_matches();
+
+    if matches.is_present("init") {
+        init_credentials();
+        std::process::exit(0);
+    }
+
+    let settings = match load_settings() {
+        Ok(set) => set,
+        Err(_) => {
+            println!("{}", "It seems that you are running bgmTTY for the first time, or".yellow().bold());
+            println!("{}", "at least we cannot read your config file.\n".yellow().bold());
+
+            println!("Rerun bgmTTY with flag --init to create the config file, or");
+            println!("get a copy from your previous computer and put it to {}", default_path().as_ref().to_str().unwrap());
+            std::process::exit(1);
+        }
+    };
+
+    let cred = settings.cred().clone();
+    let fut = request_code(cred.get_client_id())
         .map_err(|e| println!("{:#?}", e))
         .and_then(|(code, redirect)| {
             println!("Code: {}, redirect: {}", code, redirect);
             request_token(
-                AppCred::new(CLIENT_ID.to_owned(), CLIENT_SECRET.to_owned()),
+                cred,
                 code,
                 redirect,
             )
@@ -72,5 +103,4 @@ fn main() {
         })
         .map(|resp| println!("{:#?}", resp));
     tokio::run(fut);
-    */
 }

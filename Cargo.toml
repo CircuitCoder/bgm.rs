@@ -1,7 +1,7 @@
 [package]
 name = "bgmtv"
 version = "0.1.0"
-authors = ["Liu Xiaoyi <circuitcoder0@gmail.com>"]
+authors = ["CircuitCoder <circuitcoder0@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -17,6 +17,7 @@ toml = "0.4.10"
 failure = "0.1.3"
 dirs = "1.0.4"
 colored = "1.6.1"
+clap = "2.32.0"
 
 [[bin]]
 name = "bgmtty"

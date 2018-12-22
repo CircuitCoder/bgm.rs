@@ -22,10 +22,10 @@ pub struct AuthInfo {
     expires_in: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppCred {
-    client_id: String,
-    client_secret: String,
+    pub(crate) client_id: String,
+    pub(crate) client_secret: String,
 }
 
 impl AppCred {
@@ -34,6 +34,14 @@ impl AppCred {
             client_id: id,
             client_secret: secret,
         }
+    }
+
+    pub fn get_client_id(&self) -> &str {
+        &self.client_id
+    }
+
+    pub fn get_client_secret(&self) -> &str {
+        &self.client_secret
     }
 }
 

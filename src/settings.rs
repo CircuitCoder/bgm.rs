@@ -46,4 +46,8 @@ impl Settings {
 
         Ok(())
     }
+
+    pub fn cred(&self) -> &AppCred {
+        &self.credentials
+    }
 }
