@@ -7,19 +7,19 @@ use hyper::service::{MakeService, Service};
 use hyper::{Body, Request, Response};
 use reqwest;
 use reqwest::r#async::Client;
+use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::str;
 use url::form_urlencoded;
-use serde_derive::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AuthInfo {
-    access_token: String,
-    user_id: u64,
-    refresh_token: String,
-    expires_in: u64,
+    pub(crate) access_token: String,
+    pub(crate) user_id: u64,
+    pub(crate) refresh_token: String,
+    pub(crate) expires_in: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
