@@ -234,17 +234,32 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
     terminal.hide_cursor()?;
 
+    let mut cursize = tui::layout::Rect::default();
+
     let events = Events::new();
-
-    let size = terminal.size()?;
-
     loop {
+        let size = terminal.size()?;
+        if cursize != size {
+            terminal.resize(size)?;
+            cursize = size;
+        }
+
         terminal.draw(|mut f| {
+            use tui::layout::*;
+            use tui::style::*;
             use tui::widgets::*;
-            Block::default()
-                .title("Hi")
-                .borders(Borders::ALL)
-                .render(&mut f, size);
+
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+                .split(cursize);
+
+            Tabs::default()
+                .block(Block::default().borders(Borders::ALL).title("bgmTTY"))
+                .titles(&vec!["动画片"])
+                .style(Style::default().fg(Color::Green))
+                .select(0)
+                .render(&mut f, chunks[0]);
         })?;
 
         use termion::event::Key;
