@@ -1,4 +1,8 @@
+pub mod events;
+use crate::events::{Event, Events};
+
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
+use bgmtv::client::Client;
 use bgmtv::settings::Settings;
 use clap;
 use colored::*;
@@ -8,7 +12,10 @@ use futures::future::Future;
 use std::convert::AsRef;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use termion;
+use termion::raw::IntoRawMode;
 use tokio;
+use tui;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -214,4 +221,44 @@ fn main() {
     };
 
     println!("{:#?}", settings);
+    let client = Client::new(settings);
+    bootstrap(client);
+}
+
+fn bootstrap(client: Client) -> Result<(), failure::Error> {
+    let stdout = std::io::stdout().into_raw_mode()?;
+    let stdout = termion::input::MouseTerminal::from(stdout);
+    let stdout = termion::screen::AlternateScreen::from(stdout);
+    let backend = tui::backend::TermionBackend::new(stdout);
+    let mut terminal = tui::Terminal::new(backend)?;
+
+    terminal.hide_cursor()?;
+
+    let events = Events::new();
+
+    let size = terminal.size()?;
+
+    loop {
+        terminal.draw(|mut f| {
+            use tui::widgets::*;
+            Block::default()
+                .title("Hi")
+                .borders(Borders::ALL)
+                .render(&mut f, size);
+        })?;
+
+        use termion::event::Key;
+
+        match events.next()? {
+            Event::Input(input) => match input {
+                Key::Char('q') => {
+                    break;
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    Ok(())
 }

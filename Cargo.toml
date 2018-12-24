@@ -18,6 +18,8 @@ dirs = "1.0.4"
 colored = "1.6.1"
 clap = "2.32.0"
 serde_yaml = "0.8.8"
+termion = "1.5.1"
+tui = "0.3.0"
 
 [[bin]]
 name = "bgmtty"

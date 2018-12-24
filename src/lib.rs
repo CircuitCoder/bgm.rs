@@ -4,5 +4,6 @@
 #![feature(slice_concat_ext)]
 
 pub mod auth;
+pub mod client;
 pub mod consts;
 pub mod settings;
