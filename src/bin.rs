@@ -156,6 +156,11 @@ fn main() {
                 .long("init")
                 .help("(Re)initialize OAuth credentials"),
         )
+        .arg(
+            clap::Arg::with_name("refresh")
+                .long("refresh")
+                .help("Force refresh OAuth tokens"),
+        )
         .get_matches();
 
     if matches.is_present("init") {
@@ -192,7 +197,7 @@ fn main() {
     let settings = if let Some(auth) = settings.auth() {
         if auth.outdated() {
             new_auth(settings)
-        } else if auth.requires_refresh() {
+        } else if auth.requires_refresh() || matches.is_present("refresh") {
             refresh_auth(settings)
         } else {
             Ok(settings)
