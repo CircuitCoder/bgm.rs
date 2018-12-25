@@ -1,12 +1,13 @@
 // From https://github.com/fdehau/tui-rs/blob/master/examples/util/event.rs
 
 use std::io;
-use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
 use termion::event::Key;
 use termion::input::TermRead;
+
+use crossbeam_channel::{unbounded, Receiver};
 
 pub enum Event<I> {
     Input(I),
@@ -16,7 +17,7 @@ pub enum Event<I> {
 /// An small event handler that wrap termion input and tick events. Each event
 /// type is handled in its own thread and returned to a common `Receiver`
 pub struct Events {
-    rx: mpsc::Receiver<Event<Key>>,
+    pub(crate) rx: Receiver<Event<Key>>,
     input_handle: thread::JoinHandle<()>,
     tick_handle: thread::JoinHandle<()>,
 }
@@ -42,7 +43,7 @@ impl Events {
     }
 
     pub fn with_config(config: Config) -> Events {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = unbounded();
         let input_handle = {
             let tx = tx.clone();
             thread::spawn(move || {
@@ -77,9 +78,5 @@ impl Events {
             input_handle,
             tick_handle,
         }
-    }
-
-    pub fn next(&self) -> Result<Event<Key>, mpsc::RecvError> {
-        self.rx.recv()
     }
 }

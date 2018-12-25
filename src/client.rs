@@ -20,32 +20,32 @@ enum_number!(SubjectType {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubjectSmall {
-    id: u64,
-    air_date: String,
-    air_weekday: u8,
+    pub id: u64,
+    pub air_date: String,
+    pub air_weekday: u8,
 
-    name: String,
-    name_cn: String,
-    summary: String,
+    pub name: String,
+    pub name_cn: String,
+    pub summary: String,
 
     #[serde(rename = "type")]
-    subject_type: SubjectType,
+    pub subject_type: SubjectType,
 
-    url: String,
+    pub url: String,
 
-    vols_count: Option<u64>,
-    eps_count: Option<u64>,
+    pub vols_count: Option<u64>,
+    pub eps_count: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CollectionEntry {
-    ep_status: u64,
-    vol_status: u64,
+    pub ep_status: u64,
+    pub vol_status: u64,
 
     #[serde(with = "chrono::serde::ts_seconds")]
-    pub(crate) lasttouch: chrono::DateTime<chrono::Utc>,
+    pub lasttouch: chrono::DateTime<chrono::Utc>,
 
-    subject: SubjectSmall,
+    pub subject: SubjectSmall,
 }
 
 pub struct Client {

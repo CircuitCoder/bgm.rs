@@ -1,24 +1,26 @@
 #![feature(const_slice_len)]
+#![feature(arbitrary_self_types)]
 
 pub mod events;
 use crate::events::{Event, Events};
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
-use bgmtv::client::{Client, User, CollectionEntry, SubjectType};
+use bgmtv::client::{Client, CollectionEntry, SubjectType, User};
 use bgmtv::settings::Settings;
 use clap;
 use colored::*;
+use crossbeam_channel::{unbounded, Select, Sender};
 use dirs;
 use failure::Error;
 use futures::future::Future;
 use std::convert::AsRef;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
-use std::sync::mpsc;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -228,17 +230,70 @@ fn main() {
     bootstrap(client);
 }
 
-struct AppState {
-    user: Option<User>,
-    collections: Option<Vec<CollectionEntry>>
+enum FetchResult<T> {
+    Direct(T),
+    Deferred,
 }
 
-impl Default for AppState {
-    fn default() -> AppState {
+struct AppStateInner {
+    notifier: Sender<()>,
+
+    user: Option<User>,
+    collections: Option<Vec<CollectionEntry>>,
+}
+
+struct AppState {
+    client: Client,
+
+    inner: Arc<Mutex<AppStateInner>>,
+
+    rt: tokio::runtime::Runtime,
+
+    fetching_collection: bool,
+}
+
+impl AppState {
+    fn create(notifier: Sender<()>, client: Client) -> AppState {
         AppState {
-            user: None,
-            collections: None,
+            client: client,
+
+            inner: Arc::new(Mutex::new(AppStateInner {
+                notifier: notifier,
+                user: None,
+                collections: None,
+            })),
+
+            rt: tokio::runtime::Runtime::new().expect("Cannot create runtime!"),
+
+            fetching_collection: false,
         }
+    }
+
+    fn fetch_collection(&mut self) -> FetchResult<Vec<CollectionEntry>> {
+        if self.fetching_collection {
+            if let Some(ref entries) = self.inner.lock().unwrap().collections {
+                return FetchResult::Direct(entries.clone());
+            } else {
+                return FetchResult::Deferred;
+            }
+        }
+
+        self.fetching_collection = true;
+
+        let fut = self.client.collection(None);
+        let handle = self.inner.clone();
+
+        let fut = fut
+            .map(move |resp| {
+                let mut inner = handle.lock().unwrap();
+
+                inner.collections = Some(resp);
+                inner.notifier.send(());
+            })
+            .map_err(|e| println!("{}", e));
+
+        self.rt.spawn(fut);
+        return FetchResult::Deferred;
     }
 }
 
@@ -288,9 +343,11 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
     let mut cursize = tui::layout::Rect::default();
 
+    let (apptx, apprx) = unbounded();
+
     let events = Events::new();
-    let app = AppState::default();
-    let ui = UIState::default();
+    let mut app = AppState::create(apptx, client);
+    let mut ui = UIState::default();
 
     loop {
         let size = terminal.size()?;
@@ -326,16 +383,38 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     SelectableList::default()
                         .block(Block::default().title("Filter").borders(Borders::ALL))
-                        .items(&SELECTS.iter().map(|(name, _)| *name).collect::<Vec<&'static str>>())
+                        .items(
+                            &SELECTS
+                                .iter()
+                                .map(|(name, _)| *name)
+                                .collect::<Vec<&'static str>>(),
+                        )
                         .select(Some(1))
                         .style(Style::default().fg(Color::White))
                         .highlight_style(Style::default().modifier(Modifier::Italic))
                         .highlight_symbol(">>")
                         .render(&mut f, subchunks[0]);
 
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .render(&mut f, subchunks[1]);
+                    let collection = app.fetch_collection();
+
+                    if let FetchResult::Direct(collection) = collection {
+                        let para = collection
+                            .iter()
+                            .map(|e| format!("{}\n", e.subject.name))
+                            .map(|e| Text::raw(e))
+                            .collect::<Vec<_>>();
+                        Paragraph::new(para.iter())
+                            .block(Block::default().borders(Borders::ALL))
+                            .alignment(Alignment::Left)
+                            .wrap(true)
+                            .render(&mut f, subchunks[1]);
+                    } else {
+                        Paragraph::new([Text::raw("Loading...")].iter())
+                            .block(Block::default().borders(Borders::ALL))
+                            .alignment(Alignment::Center)
+                            .wrap(true)
+                            .render(&mut f, subchunks[1]);
+                    };
                 }
                 _ => {}
             }
@@ -343,14 +422,28 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
         use termion::event::Key;
 
-        match events.next()? {
-            Event::Input(input) => match input {
-                Key::Char('q') => {
-                    break;
-                }
+        let mut select = Select::new();
+
+        select.recv(&events.rx);
+        select.recv(&apprx);
+
+        let oper = select.select();
+        let index = oper.index();
+
+        if index == 0 {
+            let event = oper.recv(&events.rx).unwrap();
+
+            match event {
+                Event::Input(input) => match input {
+                    Key::Char('q') => {
+                        break;
+                    }
+                    _ => {}
+                },
                 _ => {}
-            },
-            _ => {}
+            }
+        } else {
+            oper.recv(&apprx).unwrap();
         }
     }
 
