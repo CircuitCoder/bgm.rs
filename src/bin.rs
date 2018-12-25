@@ -1,8 +1,10 @@
+#![feature(const_slice_len)]
+
 pub mod events;
 use crate::events::{Event, Events};
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
-use bgmtv::client::Client;
+use bgmtv::client::{Client, User, CollectionEntry, SubjectType};
 use bgmtv::settings::Settings;
 use clap;
 use colored::*;
@@ -16,6 +18,7 @@ use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
+use std::sync::mpsc;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -222,17 +225,56 @@ fn main() {
 
     println!("{:#?}", settings);
     let client = Client::new(settings);
-    let fut = client.collection(None);
-    tokio::run(
-        fut.map_err(|e| println!("{}", e))
-            .map(|e| println!("{:#?}", e)),
-    );
-    let fut = client.user(None);
-    tokio::run(
-        fut.map_err(|e| println!("{}", e))
-            .map(|e| println!("{:#?}", e)),
-    );
-    // bootstrap(client);
+    bootstrap(client);
+}
+
+struct AppState {
+    user: Option<User>,
+    collections: Option<Vec<CollectionEntry>>
+}
+
+impl Default for AppState {
+    fn default() -> AppState {
+        AppState {
+            user: None,
+            collections: None,
+        }
+    }
+}
+
+const TABS: [&'static str; 1] = ["Collections"];
+const SELECTS: [(&'static str, SubjectType); 3] = [
+    ("Anime", SubjectType::Anime),
+    ("Book", SubjectType::Book),
+    ("Real", SubjectType::Real),
+];
+
+struct UIState {
+    tab: usize,
+    filter: [bool; SELECTS.len()],
+}
+
+impl Default for UIState {
+    fn default() -> UIState {
+        UIState {
+            tab: 0,
+            filter: [true; SELECTS.len()],
+        }
+    }
+}
+
+impl UIState {
+    fn next_tab(&mut self) {
+        if self.tab != TABS.len() - 1 {
+            self.tab += 1;
+        }
+    }
+
+    fn prev_tab(&mut self) {
+        if self.tab != 0 {
+            self.tab -= 1;
+        }
+    }
 }
 
 fn bootstrap(client: Client) -> Result<(), failure::Error> {
@@ -247,6 +289,9 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let mut cursize = tui::layout::Rect::default();
 
     let events = Events::new();
+    let app = AppState::default();
+    let ui = UIState::default();
+
     loop {
         let size = terminal.size()?;
         if cursize != size {
@@ -266,10 +311,34 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
             Tabs::default()
                 .block(Block::default().borders(Borders::ALL).title("bgmTTY"))
-                .titles(&vec!["动画片"])
+                .titles(&TABS)
                 .style(Style::default().fg(Color::Green))
                 .select(0)
                 .render(&mut f, chunks[0]);
+
+            match ui.tab {
+                0 => {
+                    // Render collections
+                    let subchunks = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Min(20), Constraint::Percentage(100)].as_ref())
+                        .split(chunks[1]);
+
+                    SelectableList::default()
+                        .block(Block::default().title("Filter").borders(Borders::ALL))
+                        .items(&SELECTS.iter().map(|(name, _)| *name).collect::<Vec<&'static str>>())
+                        .select(Some(1))
+                        .style(Style::default().fg(Color::White))
+                        .highlight_style(Style::default().modifier(Modifier::Italic))
+                        .highlight_symbol(">>")
+                        .render(&mut f, subchunks[0]);
+
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .render(&mut f, subchunks[1]);
+                }
+                _ => {}
+            }
         })?;
 
         use termion::event::Key;
