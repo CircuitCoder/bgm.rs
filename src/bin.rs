@@ -222,7 +222,17 @@ fn main() {
 
     println!("{:#?}", settings);
     let client = Client::new(settings);
-    bootstrap(client);
+    let fut = client.collection(None);
+    tokio::run(
+        fut.map_err(|e| println!("{}", e))
+            .map(|e| println!("{:#?}", e)),
+    );
+    let fut = client.user(None);
+    tokio::run(
+        fut.map_err(|e| println!("{}", e))
+            .map(|e| println!("{:#?}", e)),
+    );
+    // bootstrap(client);
 }
 
 fn bootstrap(client: Client) -> Result<(), failure::Error> {

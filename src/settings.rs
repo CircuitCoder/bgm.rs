@@ -13,11 +13,11 @@ const REFRESH_RATIO: f64 = 0.2;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AuthHandle {
-    info: AuthInfo,
+    pub(crate) info: AuthInfo,
 
     #[serde(with = "chrono::serde::ts_seconds")]
-    time: chrono::DateTime<chrono::Utc>,
-    redirect: String,
+    pub(crate) time: chrono::DateTime<chrono::Utc>,
+    pub(crate) redirect: String,
 }
 
 impl AuthHandle {
@@ -70,7 +70,7 @@ impl Settings {
 
     pub fn load_from<P: AsRef<Path>>(file: P) -> Result<Settings, Error> {
         let mut buf = String::new();
-        File::open(file)?.read_to_string(&mut buf);
+        File::open(file)?.read_to_string(&mut buf)?;
 
         let settings: Settings = serde_yaml::from_str(&buf)?;
 

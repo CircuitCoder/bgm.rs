@@ -6,3 +6,9 @@ macro_rules! BGM_ROOT {
 
 pub(crate) const OAUTH_AUTHORIZE: &'static str = concat!(BGM_ROOT!(), "/oauth/authorize");
 pub(crate) const OAUTH_ACCESS_TOKEN: &'static str = concat!(BGM_ROOT!(), "/oauth/access_token");
+
+macro_rules! API_ROOT {
+    () => {
+        "https://api.bgm.tv"
+    };
+}
