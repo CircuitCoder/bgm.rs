@@ -287,7 +287,10 @@ impl AppState {
                 let mut inner = handle.lock().unwrap();
 
                 inner.collections = Some(resp);
-                inner.notifier.send(()).expect("Unable to notify the main thread");
+                inner
+                    .notifier
+                    .send(())
+                    .expect("Unable to notify the main thread");
             })
             .map_err(|e| println!("{}", e));
 
@@ -341,7 +344,7 @@ impl UIState {
         match ev {
             UIEvent::Key(termion::event::Key::Down) => {
                 self.scroll += 1;
-            },
+            }
             UIEvent::Key(termion::event::Key::Up) => {
                 if self.scroll > 0 {
                     self.scroll -= 1;
@@ -360,15 +363,20 @@ trait RectExt {
 
 impl RectExt for tui::layout::Rect {
     fn padding(&self, mut padding: u16) -> tui::layout::Rect {
-        if 2*padding > self.height {
+        if 2 * padding > self.height {
             padding = self.height / 2;
         }
 
-        if 2*padding > self.width {
+        if 2 * padding > self.width {
             padding = self.width / 2;
         }
 
-        tui::layout::Rect::new(self.x + padding, self.y + padding, self.width - 2*padding, self.height - 2*padding)
+        tui::layout::Rect::new(
+            self.x + padding,
+            self.y + padding,
+            self.width - 2 * padding,
+            self.height - 2 * padding,
+        )
     }
 }
 
@@ -440,10 +448,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     let collection = app.fetch_collection();
 
                     if let FetchResult::Direct(collection) = collection {
-                        let mut ents = collection
-                            .iter()
-                            .map(ViewingEntry::new)
-                            .collect::<Vec<_>>();
+                        let mut ents = collection.iter().map(ViewingEntry::new).collect::<Vec<_>>();
 
                         let mut outer = Block::default().borders(Borders::ALL);
                         outer.render(&mut f, subchunks[1]);
@@ -485,7 +490,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 if index == 0 {
                     let event = oper.recv(&evrx).unwrap();
                     if let UIEvent::Key(Key::Char('q')) = event {
-                        break
+                        break;
                     }
                     ui.reduce(event);
                 } else {
@@ -500,8 +505,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 }
 
 fn kickoff_listener(tx: Sender<UIEvent>) {
-    use std::thread;
     use std::io;
+    use std::thread;
     use termion::input::TermRead;
 
     thread::spawn(move || {

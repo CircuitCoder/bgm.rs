@@ -1,13 +1,13 @@
-use tui::widgets::Widget;
-use tui::layout::Rect;
+use bgmtv::client::CollectionEntry;
 use tui::buffer::Buffer;
+use tui::layout::Rect;
 use tui::style::Style;
+use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
-use bgmtv::client::{CollectionEntry};
-use unicode_width::UnicodeWidthStr;
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
-pub trait DynHeight : Widget {
+pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
 }
 
@@ -120,14 +120,12 @@ pub struct ViewingEntry<'a> {
 
 impl<'a> ViewingEntry<'a> {
     pub fn new(ent: &'a CollectionEntry) -> Self {
-        Self {
-            coll: ent,
-        }
+        Self { coll: ent }
     }
 
     fn title_height(&self, inner_width: u16) -> u16 {
         let tokens = UnicodeSegmentation::graphemes(self.coll.subject.name.as_str(), true);
-        
+
         let mut acc = 0;
         let mut result = 1;
         for token in tokens {
@@ -157,13 +155,12 @@ impl<'a> Widget for ViewingEntry<'a> {
         let name = self.coll.subject.name.as_str();
 
         let tokens = UnicodeSegmentation::graphemes(name, true);
-        
+
         for token in tokens {
             let token_width = UnicodeWidthStr::width_cjk(token) as u16;
             if token_width + dx > inner.width {
                 dx = 0;
                 dy += 1;
-                
             }
 
             buf.get_mut(dx + inner.x, dy + inner.y).set_symbol(token);
