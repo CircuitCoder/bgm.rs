@@ -84,7 +84,7 @@ impl<'a> Widget for Scroll<'a> {
 
                 for x in 0..width {
                     let cell = subbuf.get(x, iy);
-                    std::mem::replace(buf.get_mut(area.x + x, area.y + y), cell.clone());
+                    buf.get_mut(area.x + x, area.y + y).set_symbol(&cell.symbol);
                 }
             }
 
@@ -100,7 +100,7 @@ impl<'a> Widget for Scroll<'a> {
                 area.height - 2
             } else {
                 let progress = (self.offset - 1) as usize;
-                (progress * vacant as usize / (h - area.height - 1) as usize) as u16 + 1
+                (progress * vacant as usize / (h - area.height) as usize) as u16 + 1
             };
 
             for y in 0..area.height {
@@ -154,26 +154,24 @@ impl<'a> Widget for ViewingEntry<'a> {
         let mut dy = 0;
         let mut dx = 0;
 
-        let mut from = 0;
-        let mut to = 0;
+        let name = self.coll.subject.name.as_str();
 
-        let tokens = UnicodeSegmentation::graphemes(self.coll.subject.name.as_str(), true);
+        let tokens = UnicodeSegmentation::graphemes(name, true);
         
         for token in tokens {
             let token_width = UnicodeWidthStr::width_cjk(token) as u16;
             if token_width + dx > inner.width {
-                buf.set_string(inner.x, dy + inner.y, &self.coll.subject.name[from..to], Style::default());
                 dx = 0;
                 dy += 1;
                 
-                from = to;
             }
 
-            to += token.len();
+            buf.get_mut(dx + inner.x, dy + inner.y).set_symbol(token);
+            for i in 1..token_width {
+                buf.get_mut(dx + inner.x + i, dy + inner.y).set_symbol("");
+            }
             dx += token_width;
         }
-
-        buf.set_string(inner.x, dy + inner.y, &self.coll.subject.name[from..to], Style::default());
     }
 }
 

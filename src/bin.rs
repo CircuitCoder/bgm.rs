@@ -21,6 +21,7 @@ use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
+use tui::backend::Backend;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
