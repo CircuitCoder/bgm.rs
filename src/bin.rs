@@ -2,7 +2,7 @@
 #![feature(arbitrary_self_types)]
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
-use bgmtv::client::{Client, CollectionEntry, SubjectType, User};
+use bgmtv::client::{Client, CollectionEntry, SubjectType};
 use bgmtv::settings::Settings;
 use clap;
 use colored::*;
@@ -224,7 +224,7 @@ fn main() {
 
     println!("{:#?}", settings);
     let client = Client::new(settings);
-    bootstrap(client);
+    bootstrap(client).expect("Terminal failed");
 }
 
 enum FetchResult<T> {
@@ -235,7 +235,6 @@ enum FetchResult<T> {
 struct AppStateInner {
     notifier: Sender<()>,
 
-    user: Option<User>,
     collections: Option<Vec<CollectionEntry>>,
 }
 
@@ -256,7 +255,6 @@ impl AppState {
 
             inner: Arc::new(Mutex::new(AppStateInner {
                 notifier: notifier,
-                user: None,
                 collections: None,
             })),
 
@@ -285,7 +283,7 @@ impl AppState {
                 let mut inner = handle.lock().unwrap();
 
                 inner.collections = Some(resp);
-                inner.notifier.send(());
+                inner.notifier.send(()).expect("Unable to notify the main thread");
             })
             .map_err(|e| println!("{}", e));
 
