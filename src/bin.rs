@@ -1,9 +1,6 @@
 #![feature(const_slice_len)]
 #![feature(arbitrary_self_types)]
 
-pub mod events;
-use crate::events::{Event, Events};
-
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
 use bgmtv::client::{Client, CollectionEntry, SubjectType, User};
 use bgmtv::settings::Settings;
@@ -304,6 +301,10 @@ const SELECTS: [(&'static str, SubjectType); 3] = [
     ("Real", SubjectType::Real),
 ];
 
+enum UIEvent {
+    Key(termion::event::Key),
+}
+
 struct UIState {
     tab: usize,
     filter: [bool; SELECTS.len()],
@@ -330,6 +331,28 @@ impl UIState {
             self.tab -= 1;
         }
     }
+
+    pub fn reduce(&mut self, ev: UIEvent) -> &mut Self {
+        self
+    }
+}
+
+trait RectExt {
+    fn padding(&self, padding: u16) -> tui::layout::Rect;
+}
+
+impl RectExt for tui::layout::Rect {
+    fn padding(&self, mut padding: u16) -> tui::layout::Rect {
+        if 2*padding > self.height {
+            padding = self.height / 2;
+        }
+
+        if 2*padding > self.width {
+            padding = self.width / 2;
+        }
+
+        tui::layout::Rect::new(self.x + padding, self.y + padding, self.width - 2*padding, self.height - 2*padding)
+    }
 }
 
 fn bootstrap(client: Client) -> Result<(), failure::Error> {
@@ -344,8 +367,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let mut cursize = tui::layout::Rect::default();
 
     let (apptx, apprx) = unbounded();
+    let (evtx, evrx) = unbounded();
 
-    let events = Events::new();
+    kickoff_listener(evtx);
+
     let mut app = AppState::create(apptx, client);
     let mut ui = UIState::default();
 
@@ -409,11 +434,14 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             .wrap(true)
                             .render(&mut f, subchunks[1]);
                     } else {
+                        let mut outer = Block::default().borders(Borders::ALL);
+                        outer.render(&mut f, subchunks[1]);
+                        let region = outer.inner(subchunks[1]).padding(1);
+
                         Paragraph::new([Text::raw("Loading...")].iter())
-                            .block(Block::default().borders(Borders::ALL))
                             .alignment(Alignment::Center)
                             .wrap(true)
-                            .render(&mut f, subchunks[1]);
+                            .render(&mut f, region);
                     };
                 }
                 _ => {}
@@ -424,28 +452,47 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
         let mut select = Select::new();
 
-        select.recv(&events.rx);
+        select.recv(&evrx);
         select.recv(&apprx);
 
-        let oper = select.select();
-        let index = oper.index();
+        let result = select.select_timeout(std::time::Duration::from_millis(100));
+        match result {
+            Ok(oper) => {
+                let index = oper.index();
 
-        if index == 0 {
-            let event = oper.recv(&events.rx).unwrap();
-
-            match event {
-                Event::Input(input) => match input {
-                    Key::Char('q') => {
-                        break;
+                if index == 0 {
+                    let event = oper.recv(&evrx).unwrap();
+                    if let UIEvent::Key(Key::Char('q')) = event {
+                        break
                     }
-                    _ => {}
-                },
-                _ => {}
+                    ui.reduce(event);
+                } else {
+                    oper.recv(&apprx).unwrap();
+                }
             }
-        } else {
-            oper.recv(&apprx).unwrap();
-        }
+            Err(_) => {}
+        };
     }
 
     Ok(())
+}
+
+fn kickoff_listener(tx: Sender<UIEvent>) {
+    use std::thread;
+    use std::io;
+    use termion::input::TermRead;
+
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        for ev in stdin.keys() {
+            match ev {
+                Ok(key) => {
+                    if let Err(e) = tx.send(UIEvent::Key(key)) {
+                        println!("{}", e);
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    });
 }
