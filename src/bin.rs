@@ -1,6 +1,9 @@
 #![feature(const_slice_len)]
 #![feature(arbitrary_self_types)]
 
+mod widgets;
+use crate::widgets::*;
+
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
 use bgmtv::client::{Client, CollectionEntry, SubjectType};
 use bgmtv::settings::Settings;
@@ -306,6 +309,7 @@ enum UIEvent {
 struct UIState {
     tab: usize,
     filter: [bool; SELECTS.len()],
+    scroll: u16,
 }
 
 impl Default for UIState {
@@ -313,6 +317,8 @@ impl Default for UIState {
         UIState {
             tab: 0,
             filter: [true; SELECTS.len()],
+
+            scroll: 0,
         }
     }
 }
@@ -331,7 +337,19 @@ impl UIState {
     }
 
     pub fn reduce(&mut self, ev: UIEvent) -> &mut Self {
-        self
+        match ev {
+            UIEvent::Key(termion::event::Key::Down) => {
+                self.scroll += 1;
+            },
+            UIEvent::Key(termion::event::Key::Up) => {
+                if self.scroll > 0 {
+                    self.scroll -= 1;
+                }
+            }
+            _ => {}
+        }
+
+        return self;
     }
 }
 
@@ -421,16 +439,21 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     let collection = app.fetch_collection();
 
                     if let FetchResult::Direct(collection) = collection {
-                        let para = collection
+                        let mut ents = collection
                             .iter()
-                            .map(|e| format!("{}\n", e.subject.name))
-                            .map(|e| Text::raw(e))
+                            .map(ViewingEntry::new)
                             .collect::<Vec<_>>();
-                        Paragraph::new(para.iter())
-                            .block(Block::default().borders(Borders::ALL))
-                            .alignment(Alignment::Left)
-                            .wrap(true)
-                            .render(&mut f, subchunks[1]);
+
+                        let mut outer = Block::default().borders(Borders::ALL);
+                        outer.render(&mut f, subchunks[1]);
+                        let inner = outer.inner(subchunks[1]);
+
+                        let mut scroll = Scroll::default().scroll(ui.scroll);
+                        for ent in ents.iter_mut() {
+                            scroll.push(ent)
+                        }
+
+                        scroll.render(&mut f, inner);
                     } else {
                         let mut outer = Block::default().borders(Borders::ALL);
                         outer.render(&mut f, subchunks[1]);
