@@ -315,7 +315,7 @@ enum UIEvent {
 #[derive(Clone)]
 enum PendingUIEvent {
     Click(u16, u16),
-    ScrollIntoView(u16),
+    ScrollIntoView(usize),
 }
 
 struct UIState {
@@ -323,6 +323,7 @@ struct UIState {
     filter: [bool; SELECTS.len()],
     scroll: u16,
     focus: Option<usize>,
+    focus_limit: usize,
 
     pending: Option<PendingUIEvent>,
 }
@@ -335,6 +336,7 @@ impl Default for UIState {
 
             scroll: 0,
             focus: None,
+            focus_limit: 0,
 
             pending: None,
         }
@@ -354,16 +356,43 @@ impl UIState {
         }
     }
 
+    fn set_focus_limit(&mut self, mf: usize) {
+        self.focus_limit = mf;
+        if let Some(f) = self.focus {
+            if f >= mf {
+                if mf == 0 {
+                    self.focus = None;
+                } else {
+                    self.focus = Some(mf - 1);
+                }
+            }
+        }
+    }
+
     pub fn reduce(&mut self, ev: UIEvent) -> &mut Self {
         use termion::event::{MouseEvent, Key};
 
         match ev {
             UIEvent::Key(Key::Down) => {
-                self.scroll += 1;
+                match self.focus {
+                    None => {
+                        self.focus = Some(0);
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(0));
+                    },
+                    Some(f) => {
+                        if f + 1 < self.focus_limit {
+                            self.focus = Some(f+1);
+                            self.pending = Some(PendingUIEvent::ScrollIntoView(f+1));
+                        }
+                    }
+                }
             }
             UIEvent::Key(Key::Up) => {
-                if self.scroll > 0 {
-                    self.scroll -= 1;
+                if let Some(f) = self.focus {
+                    if f > 0 {
+                        self.focus = Some(f-1);
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(f-1));
+                    }
                 }
             }
             UIEvent::Mouse(m) =>
@@ -479,11 +508,18 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     let collection = app.fetch_collection();
 
                     if let FetchResult::Direct(collection) = collection {
+                        // Sync app state into ui state
+                        ui.set_focus_limit(collection.len());
+
                         let mut ents = collection.iter().map(ViewingEntry::new).collect::<Vec<_>>();
 
                         let mut outer = Block::default().borders(Borders::ALL);
                         outer.render(&mut f, subchunks[1]);
                         let inner = outer.inner(subchunks[1]);
+
+                        if let Some(i) = ui.focus {
+                            ents[i].select(true);
+                        }
 
                         let mut scroll = Scroll::default()
                             .scroll(ui.scroll)
@@ -500,6 +536,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         }
 
                         scroll.render(&mut f, inner);
+
+                        if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
+                            scroll.scroll_into_view(index);
+                        }
 
                         if let Some(PendingUIEvent::Click(x, y)) = pending {
                             if inner.contains(x, y) {

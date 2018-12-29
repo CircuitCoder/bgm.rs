@@ -1,12 +1,11 @@
 use bgmtv::client::CollectionEntry;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
-use tui::style::Style;
+use tui::style::{Style, Color};
 use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-use std::any::Any;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
@@ -44,22 +43,14 @@ impl<'a> Scroll<'a> {
         self.content.iter().fold(0, |acc, e| acc + e.height(width))
     }
 
-    pub fn scroll(self, s: u16) -> Self {
-        Self {
-            content: self.content,
-            bound: self.bound,
-            offset: s,
-            listener: self.listener,
-        }
+    pub fn scroll(mut self, s: u16) -> Self {
+        self.offset = s;
+        self
     }
 
-    pub fn listen<T: 'a + FnMut(ScrollEvent) -> ()>(self, f: T) -> Self {
-        Self {
-            content: self.content,
-            bound: self.bound,
-            offset: self.offset,
-            listener: Some(Box::new(f)),
-        }
+    pub fn listen<T: 'a + FnMut(ScrollEvent) -> ()>(mut self, f: T) -> Self {
+        self.listener = Some(Box::new(f));
+        self
     }
 
     fn set_bound(&mut self, area: Rect) {
@@ -83,6 +74,34 @@ impl<'a> Scroll<'a> {
 
     pub fn push(&mut self, comp: &'a mut DynHeight) {
         self.content.push(comp);
+    }
+
+    pub fn scroll_into_view(&mut self, index: usize) {
+        let index = if index > self.content.len() {
+            self.content.len()
+        } else { index };
+
+        let mut start = 0;
+        for i in 0..index {
+            start += self.content[i].height(self.bound.width);
+        }
+
+        let end = start + self.content[index].height(self.bound.width);
+
+        let new_offset = if start < self.offset {
+            start
+        } else if end > self.offset + self.bound.height {
+            end - self.bound.height
+        } else {
+            self.offset
+        };
+
+        if new_offset != self.offset {
+            self.offset = new_offset;
+            if let Some(ref mut f) = self.listener {
+                f(ScrollEvent::ScrollTo(self.offset));
+            }
+        }
     }
 }
 
@@ -125,7 +144,7 @@ impl<'a> Widget for Scroll<'a> {
 
                 for x in 0..width {
                     let cell = subbuf.get(x, iy);
-                    buf.get_mut(area.x + x, area.y + y).set_symbol(&cell.symbol);
+                    std::mem::replace(buf.get_mut(area.x + x, area.y + y), cell.clone());
                 }
             }
 
@@ -182,11 +201,17 @@ impl<'a> Intercept for Scroll<'a> {
 
 pub struct ViewingEntry<'a> {
     coll: &'a CollectionEntry,
+
+    selected: bool,
 }
 
 impl<'a> ViewingEntry<'a> {
     pub fn new(ent: &'a CollectionEntry) -> Self {
-        Self { coll: ent }
+        Self { coll: ent, selected: false }
+    }
+
+    pub fn select(&mut self, s: bool) {
+        self.selected = s;
     }
 
     fn title_height(&self, inner_width: u16) -> u16 {
@@ -210,7 +235,14 @@ impl<'a> ViewingEntry<'a> {
 
 impl<'a> Widget for ViewingEntry<'a> {
     fn draw(&mut self, area: Rect, buf: &mut Buffer) {
-        let mut b = Block::default().borders(Borders::ALL);
+        let bs = if self.selected {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default()
+        };
+
+        let mut b = Block::default().borders(Borders::ALL).border_style(bs);
+
         b.draw(area, buf);
         let inner = b.inner(area);
 
