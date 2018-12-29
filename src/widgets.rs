@@ -18,6 +18,7 @@ pub trait Intercept<Event> {
 
 pub enum ScrollEvent {
     ScrollTo(u16),
+    Sub(usize),
 }
 
 pub struct Scroll<'a> {
@@ -177,15 +178,29 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
                     (pos - 1) * (h - self.bound.height) / (self.bound.height - 2)
                 };
 
-                return Some(ScrollEvent::ScrollTo(scroll))
+                return Some(ScrollEvent::ScrollTo(scroll));
             }
+        } else if x < self.bound.x + self.bound.width - 1{
+            // Is children
+            let mut y = y - self.bound.y + self.offset;
+
+            for i in 0..self.content.len() {
+                let h = self.content[i].height(self.bound.width);
+                if h > y {
+                    return Some(ScrollEvent::Sub(i));
+                }
+
+                y -= h;
+            }
+
+            return Some(ScrollEvent::Sub(self.content.len()-1));
         }
 
         None
     }
 }
 
-enum ViewingEntryEvent {
+pub enum ViewingEntryEvent {
     Click,
 }
 

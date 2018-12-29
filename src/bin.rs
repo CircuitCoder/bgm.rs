@@ -546,6 +546,14 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     Some(ScrollEvent::ScrollTo(pos)) => {
                                         ui.set_scroll(pos);
                                     }
+                                    Some(ScrollEvent::Sub(i)) => {
+                                        match ents[i].intercept(x, y) {
+                                            Some(ViewingEntryEvent::Click) => {
+                                                ui.set_focus(Some(i));
+                                            }
+                                            _ => {}
+                                        }
+                                    }
                                     _ => {}
                                 }
                             }
