@@ -6,14 +6,26 @@ use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+use std::any::Any;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
 }
 
+pub trait Intercept {
+    fn intercept(&mut self, x: u16, y: u16);
+}
+
+pub enum ScrollEvent {
+    ScrollTo(u16),
+}
+
 pub struct Scroll<'a> {
     content: Vec<&'a mut DynHeight>,
     offset: u16,
+
+    bound: Rect,
+    listener: Option<Box<'a + FnMut(ScrollEvent) -> ()>>,
 }
 
 impl<'a> Default for Scroll<'a> {
@@ -21,6 +33,8 @@ impl<'a> Default for Scroll<'a> {
         Self {
             content: Vec::new(),
             offset: 0,
+            bound: Rect::default(),
+            listener: None,
         }
     }
 }
@@ -33,7 +47,37 @@ impl<'a> Scroll<'a> {
     pub fn scroll(self, s: u16) -> Self {
         Self {
             content: self.content,
+            bound: self.bound,
             offset: s,
+            listener: self.listener,
+        }
+    }
+
+    pub fn listen<T: 'a + FnMut(ScrollEvent) -> ()>(self, f: T) -> Self {
+        Self {
+            content: self.content,
+            bound: self.bound,
+            offset: self.offset,
+            listener: Some(Box::new(f)),
+        }
+    }
+
+    fn set_bound(&mut self, area: Rect) {
+        self.bound = area;
+
+        let original_offset = self.offset;
+
+        let new_height = self.inner_height(area.width);
+        if new_height <= area.height {
+            self.offset = 0;
+        } else if new_height <= area.height + self.offset {
+            self.offset = new_height - area.height;
+        }
+
+        if original_offset != self.offset {
+            if let Some(ref mut f) = self.listener {
+                f(ScrollEvent::ScrollTo(self.offset));
+            }
         }
     }
 
@@ -54,13 +98,10 @@ impl<'a> Widget for Scroll<'a> {
             return;
         }
 
-        let h = self.inner_height(w);
+        self.set_bound(area);
 
-        let scroll = if h <= area.height {
-            0
-        } else {
-            std::cmp::min(h - area.height, self.offset)
-        };
+        let h = self.inner_height(w);
+        let scroll = self.offset;
 
         let mut dy = 0;
         for comp in self.content.iter_mut() {
@@ -108,6 +149,31 @@ impl<'a> Widget for Scroll<'a> {
                     buf.set_string(area.x + area.width - 1, area.y + y, "=", Style::default());
                 } else {
                     buf.set_string(area.x + area.width - 1, area.y + y, "|", Style::default());
+                }
+            }
+        }
+    }
+}
+
+impl<'a> Intercept for Scroll<'a> {
+    fn intercept(&mut self, x: u16, y: u16) {
+        let h = self.inner_height(self.bound.width);
+
+        if x == self.bound.x + self.bound.width - 1 {
+            // Scrollbar
+            if h > self.bound.height {
+                let pos = y - self.bound.y;
+
+                let scroll = if pos == 0 {
+                    0
+                } else if pos >= self.bound.height - 1 {
+                    h - self.bound.height
+                } else {
+                    (pos - 1) * (h - self.bound.height) / (self.bound.height - 2)
+                };
+
+                if let Some(ref mut listener) = self.listener {
+                    listener(ScrollEvent::ScrollTo(scroll));
                 }
             }
         }

@@ -1,5 +1,6 @@
 #![feature(const_slice_len)]
 #![feature(arbitrary_self_types)]
+#![feature(fnbox)]
 
 mod widgets;
 use crate::widgets::*;
@@ -21,7 +22,7 @@ use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
-use tui::backend::Backend;
+use std::boxed::FnBox;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -255,10 +256,10 @@ struct AppState {
 impl AppState {
     fn create(notifier: Sender<()>, client: Client) -> AppState {
         AppState {
-            client: client,
+            client,
 
             inner: Arc::new(Mutex::new(AppStateInner {
-                notifier: notifier,
+                notifier,
                 collections: None,
             })),
 
@@ -295,12 +296,13 @@ impl AppState {
             .map_err(|e| println!("{}", e));
 
         self.rt.spawn(fut);
-        return FetchResult::Deferred;
+
+        FetchResult::Deferred
     }
 }
 
-const TABS: [&'static str; 1] = ["Collections"];
-const SELECTS: [(&'static str, SubjectType); 3] = [
+const TABS: [&str; 1] = ["Collections"];
+const SELECTS: [(&str, SubjectType); 3] = [
     ("Anime", SubjectType::Anime),
     ("Book", SubjectType::Book),
     ("Real", SubjectType::Real),
@@ -308,6 +310,7 @@ const SELECTS: [(&'static str, SubjectType); 3] = [
 
 enum UIEvent {
     Key(termion::event::Key),
+    Mouse(termion::event::MouseEvent),
 }
 
 struct UIState {
@@ -353,30 +356,21 @@ impl UIState {
             _ => {}
         }
 
-        return self;
+        self
+    }
+
+    pub fn set_scroll(&mut self, s: u16) {
+        self.scroll = s;
     }
 }
 
 trait RectExt {
-    fn padding(&self, padding: u16) -> tui::layout::Rect;
+    fn contains(&self, x: u16, y: u16) -> bool;
 }
 
 impl RectExt for tui::layout::Rect {
-    fn padding(&self, mut padding: u16) -> tui::layout::Rect {
-        if 2 * padding > self.height {
-            padding = self.height / 2;
-        }
-
-        if 2 * padding > self.width {
-            padding = self.width / 2;
-        }
-
-        tui::layout::Rect::new(
-            self.x + padding,
-            self.y + padding,
-            self.width - 2 * padding,
-            self.height - 2 * padding,
-        )
+    fn contains(&self, x: u16, y: u16) -> bool {
+        return x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height;
     }
 }
 
@@ -399,6 +393,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let mut app = AppState::create(apptx, client);
     let mut ui = UIState::default();
 
+    let mut pending_click: Option<(u16, u16)> = None;
+
     loop {
         let size = terminal.size()?;
         if cursize != size {
@@ -406,11 +402,13 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             cursize = size;
         }
 
-        terminal.draw(|mut f| {
-            use tui::layout::*;
-            use tui::style::*;
-            use tui::widgets::*;
+        // Process Splits
 
+        use tui::layout::*;
+        use tui::style::*;
+        use tui::widgets::*;
+
+        terminal.draw(|mut f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
@@ -454,16 +452,29 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         outer.render(&mut f, subchunks[1]);
                         let inner = outer.inner(subchunks[1]);
 
-                        let mut scroll = Scroll::default().scroll(ui.scroll);
+                        let mut scroll = Scroll::default().scroll(ui.scroll).listen(|ev| {
+                            match ev {
+                                ScrollEvent::ScrollTo(pos) => {
+                                    ui.set_scroll(pos);
+                                }
+                            }
+                        });
+
                         for ent in ents.iter_mut() {
                             scroll.push(ent)
                         }
 
                         scroll.render(&mut f, inner);
+
+                        if let Some((x, y)) = pending_click {
+                            if inner.contains(x, y) {
+                                scroll.intercept(x, y);
+                            }
+                        }
                     } else {
                         let mut outer = Block::default().borders(Borders::ALL);
                         outer.render(&mut f, subchunks[1]);
-                        let region = outer.inner(subchunks[1]).padding(1);
+                        let region = outer.inner(subchunks[1]);
 
                         Paragraph::new([Text::raw("Loading...")].iter())
                             .alignment(Alignment::Center)
@@ -475,7 +486,12 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             }
         })?;
 
-        use termion::event::Key;
+        if pending_click.is_some() {
+            pending_click = None;
+            continue;
+        }
+
+        use termion::event::{MouseEvent, Key};
 
         let mut select = Select::new();
 
@@ -483,21 +499,29 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
         select.recv(&apprx);
 
         let result = select.select_timeout(std::time::Duration::from_millis(100));
-        match result {
-            Ok(oper) => {
-                let index = oper.index();
+        if let Ok(oper) = result {
+            let index = oper.index();
 
-                if index == 0 {
-                    let event = oper.recv(&evrx).unwrap();
-                    if let UIEvent::Key(Key::Char('q')) = event {
-                        break;
-                    }
-                    ui.reduce(event);
-                } else {
-                    oper.recv(&apprx).unwrap();
+            if index == 0 {
+                let event = oper.recv(&evrx).unwrap();
+                if let UIEvent::Key(Key::Char('q')) = event {
+                    break;
                 }
+
+                match event {
+                    UIEvent::Key(k) => {
+                        ui.reduce(UIEvent::Key(k));
+                    },
+                    UIEvent::Mouse(m) =>
+                        match m {
+                            MouseEvent::Press(_, x, y) => pending_click = Some((x-1, y-1)),
+                            MouseEvent::Hold(x, y) => pending_click = Some((x-1, y-1)),
+                            _ => {}
+                        }
+                }
+            } else {
+                oper.recv(&apprx).unwrap();
             }
-            Err(_) => {}
         };
     }
 
@@ -508,17 +532,21 @@ fn kickoff_listener(tx: Sender<UIEvent>) {
     use std::io;
     use std::thread;
     use termion::input::TermRead;
+    use termion::event::Event;
 
     thread::spawn(move || {
         let stdin = io::stdin();
-        for ev in stdin.keys() {
-            match ev {
-                Ok(key) => {
-                    if let Err(e) = tx.send(UIEvent::Key(key)) {
-                        println!("{}", e);
-                    }
+        for ev in stdin.events() {
+            if let Ok(ev) = ev {
+                let result = match ev {
+                    Event::Key(key) => tx.send(UIEvent::Key(key)),
+                    Event::Mouse(mouse) => tx.send(UIEvent::Mouse(mouse)),
+                    _ => Ok(())
+                };
+
+                if let Err(e) = result {
+                    println!("{}", e);
                 }
-                Err(_) => {}
             }
         }
     });
