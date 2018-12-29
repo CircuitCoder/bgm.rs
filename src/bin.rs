@@ -521,29 +521,33 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             ents[i].select(true);
                         }
 
-                        let mut scroll = Scroll::default()
-                            .scroll(ui.scroll)
-                            .listen(|ev| {
-                                match ev {
-                                    ScrollEvent::ScrollTo(pos) => {
-                                        ui.set_scroll(pos);
-                                    }
-                                }
-                            });
+                        let mut scroll = Scroll::default();
 
                         for ent in ents.iter_mut() {
-                            scroll.push(ent)
+                            scroll.push(ent);
                         }
+
+                        let mut scroll = scroll.scroll(ui.scroll);
+                        scroll.set_bound(inner);
+
+                        // Update offset
+                        ui.set_scroll(scroll.get_scroll());
 
                         scroll.render(&mut f, inner);
 
                         if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
                             scroll.scroll_into_view(index);
+                            ui.set_scroll(scroll.get_scroll());
                         }
 
                         if let Some(PendingUIEvent::Click(x, y)) = pending {
                             if inner.contains(x, y) {
-                                scroll.intercept(x, y);
+                                match scroll.intercept(x, y) {
+                                    Some(ScrollEvent::ScrollTo(pos)) => {
+                                        ui.set_scroll(pos);
+                                    }
+                                    _ => {}
+                                }
                             }
                         }
                     } else {

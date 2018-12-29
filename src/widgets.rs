@@ -4,6 +4,7 @@ use tui::layout::Rect;
 use tui::style::{Style, Color};
 use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
+use tui::symbols;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -11,8 +12,8 @@ pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
 }
 
-pub trait Intercept {
-    fn intercept(&mut self, x: u16, y: u16);
+pub trait Intercept<Event> {
+    fn intercept(&mut self, x: u16, y: u16) -> Option<Event>;
 }
 
 pub enum ScrollEvent {
@@ -24,7 +25,6 @@ pub struct Scroll<'a> {
     offset: u16,
 
     bound: Rect,
-    listener: Option<Box<'a + FnMut(ScrollEvent) -> ()>>,
 }
 
 impl<'a> Default for Scroll<'a> {
@@ -33,7 +33,6 @@ impl<'a> Default for Scroll<'a> {
             content: Vec::new(),
             offset: 0,
             bound: Rect::default(),
-            listener: None,
         }
     }
 }
@@ -48,28 +47,20 @@ impl<'a> Scroll<'a> {
         self
     }
 
-    pub fn listen<T: 'a + FnMut(ScrollEvent) -> ()>(mut self, f: T) -> Self {
-        self.listener = Some(Box::new(f));
-        self
-    }
-
-    fn set_bound(&mut self, area: Rect) {
+    pub fn set_bound(&mut self, area: Rect) {
         self.bound = area;
-
-        let original_offset = self.offset;
 
         let new_height = self.inner_height(area.width);
         if new_height <= area.height {
+            eprintln!("SMALLER");
             self.offset = 0;
         } else if new_height <= area.height + self.offset {
             self.offset = new_height - area.height;
         }
+    }
 
-        if original_offset != self.offset {
-            if let Some(ref mut f) = self.listener {
-                f(ScrollEvent::ScrollTo(self.offset));
-            }
-        }
+    pub fn get_scroll(&self) -> u16 {
+        self.offset
     }
 
     pub fn push(&mut self, comp: &'a mut DynHeight) {
@@ -96,12 +87,7 @@ impl<'a> Scroll<'a> {
             self.offset
         };
 
-        if new_offset != self.offset {
-            self.offset = new_offset;
-            if let Some(ref mut f) = self.listener {
-                f(ScrollEvent::ScrollTo(self.offset));
-            }
-        }
+        self.offset = new_offset;
     }
 }
 
@@ -165,17 +151,17 @@ impl<'a> Widget for Scroll<'a> {
 
             for y in 0..area.height {
                 if y >= pos && y < pos + 2 {
-                    buf.set_string(area.x + area.width - 1, area.y + y, "=", Style::default());
+                    buf.set_string(area.x + area.width - 1, area.y + y, symbols::block::FULL, Style::default());
                 } else {
-                    buf.set_string(area.x + area.width - 1, area.y + y, "|", Style::default());
+                    buf.set_string(area.x + area.width - 1, area.y + y, symbols::line::VERTICAL, Style::default());
                 }
             }
         }
     }
 }
 
-impl<'a> Intercept for Scroll<'a> {
-    fn intercept(&mut self, x: u16, y: u16) {
+impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
+    fn intercept(&mut self, x: u16, y: u16) -> Option<ScrollEvent> {
         let h = self.inner_height(self.bound.width);
 
         if x == self.bound.x + self.bound.width - 1 {
@@ -191,12 +177,16 @@ impl<'a> Intercept for Scroll<'a> {
                     (pos - 1) * (h - self.bound.height) / (self.bound.height - 2)
                 };
 
-                if let Some(ref mut listener) = self.listener {
-                    listener(ScrollEvent::ScrollTo(scroll));
-                }
+                return Some(ScrollEvent::ScrollTo(scroll))
             }
         }
+
+        None
     }
+}
+
+enum ViewingEntryEvent {
+    Click,
 }
 
 pub struct ViewingEntry<'a> {
@@ -273,5 +263,11 @@ impl<'a> Widget for ViewingEntry<'a> {
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
         self.title_height(width - 2) + 2
+    }
+}
+
+impl<'a> Intercept<ViewingEntryEvent> for ViewingEntry<'a> {
+    fn intercept(&mut self, _: u16, _: u16) -> Option<ViewingEntryEvent> {
+        Some(ViewingEntryEvent::Click)
     }
 }
