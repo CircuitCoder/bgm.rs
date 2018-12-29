@@ -22,7 +22,6 @@ use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
-use std::boxed::FnBox;
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -313,10 +312,19 @@ enum UIEvent {
     Mouse(termion::event::MouseEvent),
 }
 
+#[derive(Clone)]
+enum PendingUIEvent {
+    Click(u16, u16),
+    ScrollIntoView(u16),
+}
+
 struct UIState {
     tab: usize,
     filter: [bool; SELECTS.len()],
     scroll: u16,
+    focus: Option<usize>,
+
+    pending: Option<PendingUIEvent>,
 }
 
 impl Default for UIState {
@@ -326,6 +334,9 @@ impl Default for UIState {
             filter: [true; SELECTS.len()],
 
             scroll: 0,
+            focus: None,
+
+            pending: None,
         }
     }
 }
@@ -344,23 +355,45 @@ impl UIState {
     }
 
     pub fn reduce(&mut self, ev: UIEvent) -> &mut Self {
+        use termion::event::{MouseEvent, Key};
+
         match ev {
-            UIEvent::Key(termion::event::Key::Down) => {
+            UIEvent::Key(Key::Down) => {
                 self.scroll += 1;
             }
-            UIEvent::Key(termion::event::Key::Up) => {
+            UIEvent::Key(Key::Up) => {
                 if self.scroll > 0 {
                     self.scroll -= 1;
                 }
             }
+            UIEvent::Mouse(m) =>
+                match m {
+                    MouseEvent::Press(_, x, y) => self.pending = Some(PendingUIEvent::Click(x-1, y-1)),
+                    MouseEvent::Hold(x, y) => self.pending = Some(PendingUIEvent::Click(x-1, y-1)),
+                    _ => {}
+                }
+
             _ => {}
         }
 
         self
     }
 
+    pub fn clear_pending(&mut self) -> bool {
+        if self.pending.is_some() {
+            self.pending = None;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn set_scroll(&mut self, s: u16) {
         self.scroll = s;
+    }
+
+    pub fn set_focus(&mut self, f: Option<usize>) {
+        self.focus = f;
     }
 }
 
@@ -393,8 +426,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let mut app = AppState::create(apptx, client);
     let mut ui = UIState::default();
 
-    let mut pending_click: Option<(u16, u16)> = None;
-
     loop {
         let size = terminal.size()?;
         if cursize != size {
@@ -409,6 +440,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
         use tui::widgets::*;
 
         terminal.draw(|mut f| {
+            let pending = ui.pending.clone();
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
@@ -452,13 +485,15 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         outer.render(&mut f, subchunks[1]);
                         let inner = outer.inner(subchunks[1]);
 
-                        let mut scroll = Scroll::default().scroll(ui.scroll).listen(|ev| {
-                            match ev {
-                                ScrollEvent::ScrollTo(pos) => {
-                                    ui.set_scroll(pos);
+                        let mut scroll = Scroll::default()
+                            .scroll(ui.scroll)
+                            .listen(|ev| {
+                                match ev {
+                                    ScrollEvent::ScrollTo(pos) => {
+                                        ui.set_scroll(pos);
+                                    }
                                 }
-                            }
-                        });
+                            });
 
                         for ent in ents.iter_mut() {
                             scroll.push(ent)
@@ -466,7 +501,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                         scroll.render(&mut f, inner);
 
-                        if let Some((x, y)) = pending_click {
+                        if let Some(PendingUIEvent::Click(x, y)) = pending {
                             if inner.contains(x, y) {
                                 scroll.intercept(x, y);
                             }
@@ -486,12 +521,11 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             }
         })?;
 
-        if pending_click.is_some() {
-            pending_click = None;
+        if ui.clear_pending() {
             continue;
         }
 
-        use termion::event::{MouseEvent, Key};
+        use termion::event::Key;
 
         let mut select = Select::new();
 
@@ -508,17 +542,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     break;
                 }
 
-                match event {
-                    UIEvent::Key(k) => {
-                        ui.reduce(UIEvent::Key(k));
-                    },
-                    UIEvent::Mouse(m) =>
-                        match m {
-                            MouseEvent::Press(_, x, y) => pending_click = Some((x-1, y-1)),
-                            MouseEvent::Hold(x, y) => pending_click = Some((x-1, y-1)),
-                            _ => {}
-                        }
-                }
+                ui.reduce(event);
             } else {
                 oper.recv(&apprx).unwrap();
             }
