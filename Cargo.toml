@@ -23,6 +23,7 @@ tui = "0.3.0"
 crossbeam-channel = "0.3.4"
 unicode-segmentation = "1.1.0"
 unicode-width = "0.1.5"
+itertools = "0.8.0"
 
 [[bin]]
 name = "bgmtty"

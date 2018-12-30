@@ -231,9 +231,19 @@ fn main() {
     bootstrap(client).expect("Terminal failed");
 }
 
+#[derive(Clone)]
 enum FetchResult<T> {
     Direct(T),
     Deferred,
+}
+
+impl<T> Into<Option<T>> for FetchResult<T> {
+    fn into(self) -> Option<T> {
+        match self {
+            FetchResult::Direct(c) => Some(c),
+            FetchResult::Deferred => None,
+        }
+    }
 }
 
 struct AppStateInner {
@@ -373,9 +383,40 @@ impl UIState {
         }
     }
 
-    fn toggle_filter(&mut self, index: usize) {
+    fn toggle_filter(&mut self, index: usize, entries: &Option<Vec<CollectionEntry>>) {
+        // Get original index of the filter
+        let original = self.focus
+            .and_then(|focus| self.do_filter(entries).skip(focus).next())
+            .map(|e| e.subject.id);
+
         if let Some(f) = self.filters.get_mut(index) {
             *f = !*f;
+        }
+
+        let mut new_focus = None;
+        for (i, content) in self.do_filter(entries).enumerate() {
+            if Some(content.subject.id) == original {
+                new_focus = Some(i);
+            }
+        }
+
+        self.focus = new_focus;
+    }
+
+    pub fn do_filter<'s, 'a>(&'s self, entries: &'a Option<Vec<CollectionEntry>>) -> impl Iterator<Item=&'a CollectionEntry> {
+        match entries {
+            None => itertools::Either::Left(std::iter::empty()),
+            Some(entries) => {
+                let filters = self.filters.clone();
+                itertools::Either::Right(entries.iter().filter(move |e| {
+                    for (i, (_, t)) in SELECTS.iter().enumerate() {
+                        if t == &e.subject.subject_type {
+                            return filters[i];
+                        }
+                    }
+                    return false;
+                }))
+            }
         }
     }
 
@@ -537,32 +578,33 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     filters.set_bound(filter_inner);
                     filters.render(&mut f, filter_inner);
 
+                    let collection = app.fetch_collection();
+
                     if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
                         if filter_inner.contains(x, y) {
                             match filters.intercept(x, y, btn) {
-                                Some(FilterListEvent::Toggle(i)) => ui.toggle_filter(i),
+                                Some(FilterListEvent::Toggle(i)) => ui.toggle_filter(i, &collection.clone().into()),
                                 _ => {}
                             }
                         }
                     }
 
-                    let collection = app.fetch_collection();
-
                     if let FetchResult::Direct(collection) = collection {
                         // Sync app state into ui state
                         ui.set_focus_limit(collection.len());
-
-                        let mut ents = collection.iter().map(ViewingEntry::new).collect::<Vec<_>>();
 
                         let mut outer = Block::default().borders(Borders::ALL);
                         outer.render(&mut f, subchunks[1]);
                         let inner = outer.inner(subchunks[1]);
 
+                        let mut scroll = Scroll::default();
+
+                        let collection = Some(collection);
+                        let mut ents = ui.do_filter(&collection).map(ViewingEntry::new).collect::<Vec<_>>();
+
                         if let Some(i) = ui.focus {
                             ents[i].select(true);
                         }
-
-                        let mut scroll = Scroll::default();
 
                         for ent in ents.iter_mut() {
                             scroll.push(ent);
