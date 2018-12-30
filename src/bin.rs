@@ -370,37 +370,36 @@ impl UIState {
     }
 
     pub fn reduce(&mut self, ev: UIEvent) -> &mut Self {
-        use termion::event::{MouseEvent, Key};
+        use termion::event::{Key, MouseEvent};
 
         match ev {
-            UIEvent::Key(Key::Down) => {
-                match self.focus {
-                    None => {
-                        self.focus = Some(0);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(0));
-                    },
-                    Some(f) => {
-                        if f + 1 < self.focus_limit {
-                            self.focus = Some(f+1);
-                            self.pending = Some(PendingUIEvent::ScrollIntoView(f+1));
-                        }
+            UIEvent::Key(Key::Down) => match self.focus {
+                None => {
+                    self.focus = Some(0);
+                    self.pending = Some(PendingUIEvent::ScrollIntoView(0));
+                }
+                Some(f) => {
+                    if f + 1 < self.focus_limit {
+                        self.focus = Some(f + 1);
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(f + 1));
                     }
                 }
-            }
+            },
             UIEvent::Key(Key::Up) => {
                 if let Some(f) = self.focus {
                     if f > 0 {
-                        self.focus = Some(f-1);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(f-1));
+                        self.focus = Some(f - 1);
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(f - 1));
                     }
                 }
             }
-            UIEvent::Mouse(m) =>
-                match m {
-                    MouseEvent::Press(_, x, y) => self.pending = Some(PendingUIEvent::Click(x-1, y-1)),
-                    MouseEvent::Hold(x, y) => self.pending = Some(PendingUIEvent::Click(x-1, y-1)),
-                    _ => {}
+            UIEvent::Mouse(m) => match m {
+                MouseEvent::Press(_, x, y) => {
+                    self.pending = Some(PendingUIEvent::Click(x - 1, y - 1))
                 }
+                MouseEvent::Hold(x, y) => self.pending = Some(PendingUIEvent::Click(x - 1, y - 1)),
+                _ => {}
+            },
 
             _ => {}
         }
@@ -540,14 +539,12 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     Some(ScrollEvent::ScrollTo(pos)) => {
                                         ui.set_scroll(pos);
                                     }
-                                    Some(ScrollEvent::Sub(i)) => {
-                                        match ents[i].intercept(x, y) {
-                                            Some(ViewingEntryEvent::Click) => {
-                                                ui.set_focus(Some(i));
-                                            }
-                                            _ => {}
+                                    Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y) {
+                                        Some(ViewingEntryEvent::Click) => {
+                                            ui.set_focus(Some(i));
                                         }
-                                    }
+                                        _ => {}
+                                    },
                                     _ => {}
                                 }
                             }
@@ -615,8 +612,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 fn kickoff_listener(tx: Sender<UIEvent>) {
     use std::io;
     use std::thread;
-    use termion::input::TermRead;
     use termion::event::Event;
+    use termion::input::TermRead;
 
     thread::spawn(move || {
         let stdin = io::stdin();
@@ -625,7 +622,7 @@ fn kickoff_listener(tx: Sender<UIEvent>) {
                 let result = match ev {
                     Event::Key(key) => tx.send(UIEvent::Key(key)),
                     Event::Mouse(mouse) => tx.send(UIEvent::Mouse(mouse)),
-                    _ => Ok(())
+                    _ => Ok(()),
                 };
 
                 if let Err(e) = result {

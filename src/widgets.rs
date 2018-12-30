@@ -1,10 +1,10 @@
 use bgmtv::client::CollectionEntry;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
-use tui::style::{Style, Color};
+use tui::style::{Color, Style};
+use tui::symbols;
 use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
-use tui::symbols;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -14,6 +14,7 @@ pub trait DynHeight: Widget {
 
 pub trait Intercept<Event> {
     fn intercept(&mut self, x: u16, y: u16) -> Option<Event>;
+    fn set_bound(&mut self, area: Rect) {}
 }
 
 pub enum ScrollEvent {
@@ -48,18 +49,6 @@ impl<'a> Scroll<'a> {
         self
     }
 
-    pub fn set_bound(&mut self, area: Rect) {
-        self.bound = area;
-
-        let new_height = self.inner_height(area.width);
-        if new_height <= area.height {
-            eprintln!("SMALLER");
-            self.offset = 0;
-        } else if new_height <= area.height + self.offset {
-            self.offset = new_height - area.height;
-        }
-    }
-
     pub fn get_scroll(&self) -> u16 {
         self.offset
     }
@@ -71,7 +60,9 @@ impl<'a> Scroll<'a> {
     pub fn scroll_into_view(&mut self, index: usize) {
         let index = if index > self.content.len() {
             self.content.len()
-        } else { index };
+        } else {
+            index
+        };
 
         let mut start = 0;
         for i in 0..index {
@@ -152,9 +143,19 @@ impl<'a> Widget for Scroll<'a> {
 
             for y in 0..area.height {
                 if y >= pos && y < pos + 2 {
-                    buf.set_string(area.x + area.width - 1, area.y + y, symbols::block::FULL, Style::default());
+                    buf.set_string(
+                        area.x + area.width - 1,
+                        area.y + y,
+                        symbols::block::FULL,
+                        Style::default(),
+                    );
                 } else {
-                    buf.set_string(area.x + area.width - 1, area.y + y, symbols::line::VERTICAL, Style::default());
+                    buf.set_string(
+                        area.x + area.width - 1,
+                        area.y + y,
+                        symbols::line::VERTICAL,
+                        Style::default(),
+                    );
                 }
             }
         }
@@ -180,7 +181,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
 
                 return Some(ScrollEvent::ScrollTo(scroll));
             }
-        } else if x < self.bound.x + self.bound.width - 1{
+        } else if x < self.bound.x + self.bound.width - 1 {
             // Is children
             let mut y = y - self.bound.y + self.offset;
 
@@ -193,10 +194,21 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
                 y -= h;
             }
 
-            return Some(ScrollEvent::Sub(self.content.len()-1));
+            return Some(ScrollEvent::Sub(self.content.len() - 1));
         }
 
         None
+    }
+
+    fn set_bound(&mut self, area: Rect) {
+        self.bound = area;
+
+        let new_height = self.inner_height(area.width);
+        if new_height <= area.height {
+            self.offset = 0;
+        } else if new_height <= area.height + self.offset {
+            self.offset = new_height - area.height;
+        }
     }
 }
 
@@ -254,7 +266,6 @@ impl<'a> DynHeight for CJKText<'a> {
     }
 }
 
-
 pub enum ViewingEntryEvent {
     Click,
 }
@@ -269,7 +280,11 @@ pub struct ViewingEntry<'a> {
 impl<'a> ViewingEntry<'a> {
     pub fn new(ent: &'a CollectionEntry) -> Self {
         let text = CJKText::new(ent.subject.name.as_str());
-        Self { coll: ent, selected: false, text }
+        Self {
+            coll: ent,
+            selected: false,
+            text,
+        }
     }
 
     pub fn select(&mut self, s: bool) {
