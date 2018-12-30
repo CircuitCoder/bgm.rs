@@ -1,4 +1,5 @@
 use bgmtv::client::{CollectionEntry, SubjectType};
+use termion::event::MouseButton;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
 use tui::style::{Color, Style};
@@ -7,7 +8,6 @@ use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-use termion::event::MouseButton;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
@@ -259,9 +259,13 @@ impl<'a> Widget for CJKText<'a> {
                 dy += 1;
             }
 
-            buf.get_mut(dx + area.x, dy + area.y).set_symbol(token).set_style(self.style);
+            buf.get_mut(dx + area.x, dy + area.y)
+                .set_symbol(token)
+                .set_style(self.style);
             for i in 1..token_width {
-                buf.get_mut(dx + area.x + i, dy + area.y).set_symbol("").set_style(self.style);
+                buf.get_mut(dx + area.x + i, dy + area.y)
+                    .set_symbol("")
+                    .set_style(self.style);
             }
             dx += token_width;
         }
@@ -308,10 +312,14 @@ impl<'a> ViewingEntry<'a> {
         let text_cn = CJKText::new(ent.subject.name_cn.as_str());
 
         let progress = match ent.subject.subject_type {
-            SubjectType::Book if ent.subject.vols_count.is_some() =>
-                Some(ViewProgress::new(ent.subject.vols_count.unwrap(), ent.vol_status)),
-            SubjectType::Anime if ent.subject.eps_count.is_some() =>
-                Some(ViewProgress::new(ent.subject.eps_count.unwrap(), ent.ep_status)),
+            SubjectType::Book if ent.subject.vols_count.is_some() => Some(ViewProgress::new(
+                ent.subject.vols_count.unwrap(),
+                ent.vol_status,
+            )),
+            SubjectType::Anime if ent.subject.eps_count.is_some() => Some(ViewProgress::new(
+                ent.subject.eps_count.unwrap(),
+                ent.ep_status,
+            )),
             _ => None,
         };
 
@@ -345,13 +353,23 @@ impl<'a> Widget for ViewingEntry<'a> {
         self.text.draw(inner, buf);
 
         let occupied_height = self.text.height(inner.width);
-        let new_area = Rect::new(inner.x, inner.y + occupied_height, inner.width, inner.height - occupied_height);
+        let new_area = Rect::new(
+            inner.x,
+            inner.y + occupied_height,
+            inner.width,
+            inner.height - occupied_height,
+        );
         self.text_cn.draw(new_area, buf);
 
         if let Some(ref mut progress) = self.progress {
             let occupied_height = self.text_cn.height(inner.width) + 1;
 
-            let new_area = Rect::new(new_area.x, new_area.y + occupied_height, new_area.width, new_area.height - occupied_height);
+            let new_area = Rect::new(
+                new_area.x,
+                new_area.y + occupied_height,
+                new_area.width,
+                new_area.height - occupied_height,
+            );
             progress.draw(new_area, buf);
         }
     }
@@ -361,7 +379,11 @@ impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
         2 + self.text.height(width - 2)
             + self.text_cn.height(width - 2)
-            + self.progress.as_ref().map(|p| p.height(width - 2) + 1).unwrap_or(0)
+            + self
+                .progress
+                .as_ref()
+                .map(|p| p.height(width - 2) + 1)
+                .unwrap_or(0)
     }
 }
 
@@ -426,7 +448,7 @@ impl<'a> Widget for Tabber<'a> {
 }
 
 impl<'a> Intercept<TabberEvent> for Tabber<'a> {
-    fn intercept(&mut self, x: u16, _: u16, _: MouseButton) -> Option<TabberEvent>{
+    fn intercept(&mut self, x: u16, _: u16, _: MouseButton) -> Option<TabberEvent> {
         let dx = x - self.bound.x;
         let mut counter = 0;
 
@@ -462,7 +484,11 @@ pub struct FilterList<'a> {
 
 impl<'a> FilterList<'a> {
     pub fn with(tabs: &'a [&'a str], state: &'a [bool]) -> Self {
-        Self { tabs, state, bound: Rect::default() }
+        Self {
+            tabs,
+            state,
+            bound: Rect::default(),
+        }
     }
 }
 
@@ -484,7 +510,7 @@ impl<'a> Widget for FilterList<'a> {
             let width = viewport.width - 2;
             let mut text = CJKText::new(tab);
             let height = text.height(width);
-            
+
             let area = Rect::new(viewport.x + 2, viewport.y + dy, width, height);
             text.draw(area, buf);
 
@@ -523,10 +549,7 @@ struct ViewProgress {
 
 impl ViewProgress {
     fn new(total: u64, current: u64) -> Self {
-        Self {
-            total,
-            current,
-        }
+        Self { total, current }
     }
 }
 

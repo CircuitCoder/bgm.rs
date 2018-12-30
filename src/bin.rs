@@ -385,7 +385,8 @@ impl UIState {
 
     fn toggle_filter(&mut self, index: usize, entries: &Option<Vec<CollectionEntry>>) {
         // Get original index of the filter
-        let original = self.focus
+        let original = self
+            .focus
             .and_then(|focus| self.do_filter(entries).skip(focus).next())
             .map(|e| e.subject.id);
 
@@ -403,7 +404,10 @@ impl UIState {
         self.focus = new_focus;
     }
 
-    pub fn do_filter<'s, 'a>(&'s self, entries: &'a Option<Vec<CollectionEntry>>) -> impl Iterator<Item=&'a CollectionEntry> {
+    pub fn do_filter<'s, 'a>(
+        &'s self,
+        entries: &'a Option<Vec<CollectionEntry>>,
+    ) -> impl Iterator<Item = &'a CollectionEntry> {
         match entries {
             None => itertools::Either::Left(std::iter::empty()),
             Some(entries) => {
@@ -451,7 +455,13 @@ impl UIState {
                 MouseEvent::Press(btn, x, y) => {
                     self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn))
                 }
-                MouseEvent::Hold(x, y) => self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, termion::event::MouseButton::Left)),
+                MouseEvent::Hold(x, y) => {
+                    self.pending = Some(PendingUIEvent::Click(
+                        x - 1,
+                        y - 1,
+                        termion::event::MouseButton::Left,
+                    ))
+                }
                 _ => {}
             },
 
@@ -476,11 +486,7 @@ impl UIState {
 
     pub fn scroll_delta(&mut self, delta: i16) {
         let new_scroll = self.scroll as i16 + delta;
-        self.scroll = if new_scroll < 0 {
-            0
-        } else {
-            new_scroll as u16
-        };
+        self.scroll = if new_scroll < 0 { 0 } else { new_scroll as u16 };
     }
 
     pub fn set_focus(&mut self, f: Option<usize>) {
@@ -582,7 +588,9 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
                         if filter_inner.contains(x, y) {
                             match filters.intercept(x, y, btn) {
-                                Some(FilterListEvent::Toggle(i)) => ui.toggle_filter(i, &collection.clone().into()),
+                                Some(FilterListEvent::Toggle(i)) => {
+                                    ui.toggle_filter(i, &collection.clone().into())
+                                }
                                 _ => {}
                             }
                         }
@@ -599,7 +607,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         let mut scroll = Scroll::default();
 
                         let collection = Some(collection);
-                        let mut ents = ui.do_filter(&collection).map(ViewingEntry::new).collect::<Vec<_>>();
+                        let mut ents = ui
+                            .do_filter(&collection)
+                            .map(ViewingEntry::new)
+                            .collect::<Vec<_>>();
 
                         if let Some(i) = ui.focus {
                             ents[i].select(true);
@@ -634,7 +645,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     Some(ScrollEvent::ScrollDown) => {
                                         ui.scroll_delta(1);
                                     }
-                                    Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y, btn) {
+                                    Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y, btn)
+                                    {
                                         Some(ViewingEntryEvent::Click) => {
                                             ui.set_focus(Some(i));
                                         }
