@@ -445,7 +445,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
     terminal.hide_cursor()?;
 
-    let mut cursize = tui::layout::Rect::default();
+    let mut cursize = terminal.size()?;
 
     let (apptx, apprx) = unbounded();
     let (evtx, evrx) = unbounded();
@@ -455,13 +455,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let mut app = AppState::create(apptx, client);
     let mut ui = UIState::default();
 
-    loop {
-        let size = terminal.size()?;
-        if cursize != size {
-            terminal.resize(size)?;
-            cursize = size;
-        }
-
+    'main: loop {
         // Process Splits
 
         use tui::layout::*;
@@ -577,28 +571,42 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             continue;
         }
 
-        use termion::event::Key;
+        loop {
+            use termion::event::Key;
 
-        let mut select = Select::new();
+            let mut select = Select::new();
 
-        select.recv(&evrx);
-        select.recv(&apprx);
+            select.recv(&evrx);
+            select.recv(&apprx);
 
-        let result = select.select_timeout(std::time::Duration::from_millis(100));
-        if let Ok(oper) = result {
-            let index = oper.index();
+            let result = select.select_timeout(std::time::Duration::from_millis(5));
+            if let Ok(oper) = result {
+                let index = oper.index();
 
-            if index == 0 {
-                let event = oper.recv(&evrx).unwrap();
-                if let UIEvent::Key(Key::Char('q')) = event {
-                    break;
+                if index == 0 {
+                    let event = oper.recv(&evrx).unwrap();
+                    if let UIEvent::Key(Key::Char('q')) = event {
+                        break 'main;
+                    }
+
+                    ui.reduce(event);
+                } else {
+                    oper.recv(&apprx).unwrap();
                 }
 
-                ui.reduce(event);
-            } else {
-                oper.recv(&apprx).unwrap();
+                break;
+            };
+
+            // Check for terminal size
+            let size = terminal.size()?;
+            if cursize != size {
+                terminal.resize(size)?;
+                cursize = size;
+
+                // Proceed to repaint
+                break;
             }
-        };
+        }
     }
 
     Ok(())
