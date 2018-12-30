@@ -606,7 +606,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     } else {
                         let mut outer = Block::default().borders(Borders::ALL);
                         outer.render(&mut f, subchunks[1]);
-                        let region = outer.inner(subchunks[1]);
+                        let region = outer.inner(subchunks[1]).inner(1);
 
                         Paragraph::new([Text::raw("Loading...")].iter())
                             .alignment(Alignment::Center)
