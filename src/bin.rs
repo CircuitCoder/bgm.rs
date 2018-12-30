@@ -532,7 +532,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
         // Process Splits
 
         use tui::layout::*;
-        use tui::style::*;
         use tui::widgets::*;
 
         terminal.draw(|mut f| {
