@@ -93,6 +93,13 @@ impl Settings {
         &self.auth
     }
 
+    pub fn logout(self) -> Settings {
+        Settings {
+            credentials: self.credentials,
+            auth: None,
+        }
+    }
+
     pub fn update_auth(self, auth: AuthInfo, redirect: String) -> Settings {
         self.update_handle(AuthHandle {
             info: auth,

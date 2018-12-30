@@ -174,6 +174,16 @@ fn main() {
                 .long("refresh")
                 .help("Force refresh OAuth tokens"),
         )
+        .arg(
+            clap::Arg::with_name("logout")
+                .long("logout")
+                .help("Logout your previous account and exit immediately."),
+        )
+        .arg(
+            clap::Arg::with_name("auth-only")
+                .long("auth-only")
+                .help("Only perform one auth operation and exit immediately, that is, refresh or login"),
+        )
         .get_matches();
 
     if matches.is_present("init") {
@@ -207,6 +217,14 @@ fn main() {
         }
     };
 
+    if matches.is_present("logout") {
+        settings.logout()
+            .save_to(default_path())
+            .expect(&"Failed to save config!".red().bold());
+
+        return;
+    }
+
     let settings = if let Some(auth) = settings.auth() {
         if auth.outdated() {
             new_auth(settings)
@@ -226,7 +244,10 @@ fn main() {
         std::process::exit(1);
     };
 
-    println!("{:#?}", settings);
+    if matches.is_present("auth-only") {
+        return;
+    }
+
     let client = Client::new(settings);
     bootstrap(client).expect("Terminal failed");
 }
