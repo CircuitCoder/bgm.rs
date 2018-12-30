@@ -202,8 +202,6 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
 
                 y -= h;
             }
-
-            return Some(ScrollEvent::Sub(self.content.len() - 1));
         }
 
         None
