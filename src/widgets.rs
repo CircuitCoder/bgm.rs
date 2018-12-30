@@ -7,18 +7,21 @@ use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+use termion::event::MouseButton;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
 }
 
 pub trait Intercept<Event> {
-    fn intercept(&mut self, x: u16, y: u16) -> Option<Event>;
+    fn intercept(&mut self, x: u16, y: u16, btn: MouseButton) -> Option<Event>;
     fn set_bound(&mut self, area: Rect) {}
 }
 
 pub enum ScrollEvent {
     ScrollTo(u16),
+    ScrollUp,
+    ScrollDown,
     Sub(usize),
 }
 
@@ -163,7 +166,13 @@ impl<'a> Widget for Scroll<'a> {
 }
 
 impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
-    fn intercept(&mut self, x: u16, y: u16) -> Option<ScrollEvent> {
+    fn intercept(&mut self, x: u16, y: u16, btn: MouseButton) -> Option<ScrollEvent> {
+        match btn {
+            MouseButton::WheelUp => return Some(ScrollEvent::ScrollUp),
+            MouseButton::WheelDown => return Some(ScrollEvent::ScrollDown),
+            _ => {}
+        }
+
         let h = self.inner_height(self.bound.width);
 
         if x == self.bound.x + self.bound.width - 1 {
@@ -328,18 +337,20 @@ impl<'a> DynHeight for ViewingEntry<'a> {
 }
 
 impl<'a> Intercept<ViewingEntryEvent> for ViewingEntry<'a> {
-    fn intercept(&mut self, _: u16, _: u16) -> Option<ViewingEntryEvent> {
+    fn intercept(&mut self, _: u16, _: u16, _: MouseButton) -> Option<ViewingEntryEvent> {
         Some(ViewingEntryEvent::Click)
     }
 }
 
-enum TabberEvent {
+pub enum TabberEvent {
     Select(usize),
 }
 
 pub struct Tabber<'a> {
     tabs: &'a [&'a str],
     selected: Option<usize>,
+
+    bound: Rect,
 }
 
 impl<'a> Tabber<'a> {
@@ -347,6 +358,7 @@ impl<'a> Tabber<'a> {
         Self {
             tabs,
             selected: None,
+            bound: Rect::default(),
         }
     }
 
@@ -381,5 +393,29 @@ impl<'a> Widget for Tabber<'a> {
 
             dx += width + 2;
         }
+    }
+}
+
+impl<'a> Intercept<TabberEvent> for Tabber<'a> {
+    fn intercept(&mut self, x: u16, _: u16, _: MouseButton) -> Option<TabberEvent>{
+        let dx = x - self.bound.x;
+        let mut counter = 0;
+
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let text = CJKText::new(tab);
+
+            let width = text.oneline_min_width();
+            counter += width + 2;
+
+            if counter > dx {
+                return Some(TabberEvent::Select(i));
+            }
+        }
+
+        None
+    }
+
+    fn set_bound(&mut self, area: Rect) {
+        self.bound = area;
     }
 }

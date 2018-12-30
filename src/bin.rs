@@ -314,7 +314,7 @@ enum UIEvent {
 
 #[derive(Clone)]
 enum PendingUIEvent {
-    Click(u16, u16),
+    Click(u16, u16, termion::event::MouseButton),
     ScrollIntoView(usize),
 }
 
@@ -344,16 +344,20 @@ impl Default for UIState {
 }
 
 impl UIState {
-    fn next_tab(&mut self) {
+    fn rotate_tab(&mut self) {
         if self.tab != TABS.len() - 1 {
             self.tab += 1;
+        } else {
+            self.tab = 0;
         }
     }
 
-    fn prev_tab(&mut self) {
-        if self.tab != 0 {
-            self.tab -= 1;
+    fn select_tab(&mut self, mut tab: usize) {
+        if tab >= TABS.len() {
+            tab = TABS.len() - 1;
         }
+
+        self.tab = tab;
     }
 
     fn set_focus_limit(&mut self, mf: usize) {
@@ -373,7 +377,7 @@ impl UIState {
         use termion::event::{Key, MouseEvent};
 
         match ev {
-            UIEvent::Key(Key::Down) => match self.focus {
+            UIEvent::Key(Key::Down) if self.tab == 0 => match self.focus {
                 None => {
                     self.focus = Some(0);
                     self.pending = Some(PendingUIEvent::ScrollIntoView(0));
@@ -385,7 +389,7 @@ impl UIState {
                     }
                 }
             },
-            UIEvent::Key(Key::Up) => {
+            UIEvent::Key(Key::Up) if self.tab == 0 => {
                 if let Some(f) = self.focus {
                     if f > 0 {
                         self.focus = Some(f - 1);
@@ -393,11 +397,14 @@ impl UIState {
                     }
                 }
             }
+            UIEvent::Key(Key::Char('\t')) => {
+                self.rotate_tab();
+            }
             UIEvent::Mouse(m) => match m {
-                MouseEvent::Press(_, x, y) => {
-                    self.pending = Some(PendingUIEvent::Click(x - 1, y - 1))
+                MouseEvent::Press(btn, x, y) => {
+                    self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn))
                 }
-                MouseEvent::Hold(x, y) => self.pending = Some(PendingUIEvent::Click(x - 1, y - 1)),
+                MouseEvent::Hold(x, y) => self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, termion::event::MouseButton::Left)),
                 _ => {}
             },
 
@@ -418,6 +425,15 @@ impl UIState {
 
     pub fn set_scroll(&mut self, s: u16) {
         self.scroll = s;
+    }
+
+    pub fn scroll_delta(&mut self, delta: i16) {
+        let new_scroll = self.scroll as i16 + delta;
+        self.scroll = if new_scroll < 0 {
+            0
+        } else {
+            new_scroll as u16
+        };
     }
 
     pub fn set_focus(&mut self, f: Option<usize>) {
@@ -472,7 +488,18 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             let mut tab_block = Block::default().borders(Borders::ALL).title("bgmTTY");
             tab_block.render(&mut f, chunks[0]);
             let tab_inner = tab_block.inner(chunks[0]);
-            Tabber::with(&TABS).select(ui.tab).render(&mut f, tab_inner);
+            let mut tabber = Tabber::with(&TABS).select(ui.tab);
+            tabber.set_bound(tab_inner);
+            tabber.render(&mut f, tab_inner);
+
+            if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
+                if tab_inner.contains(x, y) {
+                    match tabber.intercept(x, y, btn) {
+                        Some(TabberEvent::Select(i)) => ui.select_tab(i),
+                        _ => {}
+                    }
+                }
+            }
 
             match ui.tab {
                 0 => {
@@ -531,13 +558,19 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             ui.set_scroll(scroll.get_scroll());
                         }
 
-                        if let Some(PendingUIEvent::Click(x, y)) = pending {
+                        if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
                             if inner.contains(x, y) {
-                                match scroll.intercept(x, y) {
+                                match scroll.intercept(x, y, btn) {
                                     Some(ScrollEvent::ScrollTo(pos)) => {
                                         ui.set_scroll(pos);
                                     }
-                                    Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y) {
+                                    Some(ScrollEvent::ScrollUp) => {
+                                        ui.scroll_delta(-1);
+                                    }
+                                    Some(ScrollEvent::ScrollDown) => {
+                                        ui.scroll_delta(1);
+                                    }
+                                    Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y, btn) {
                                         Some(ViewingEntryEvent::Click) => {
                                             ui.set_focus(Some(i));
                                         }
