@@ -222,25 +222,31 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
 }
 
 pub struct CJKText<'a> {
-    text: &'a str,
-
-    style: Style,
+    content: Vec<(&'a str, Style)>,
 }
 
 impl<'a> CJKText<'a> {
     pub fn new(text: &'a str) -> Self {
-        Self {
-            text,
-            style: Style::default(),
-        }
+        Self { content: [(text, Style::default())].to_vec() }
+    }
+
+    pub fn raw(content: Vec<(&'a str, Style)>) -> Self {
+        Self { content }
     }
 
     pub fn oneline_min_width(&self) -> u16 {
-        UnicodeWidthStr::width_cjk(self.text) as u16
+        let mut result = 0;
+        for (t, _) in self.content.iter() {
+            result += t.width_cjk() as u16;
+        }
+
+        result
     }
 
     pub fn set_style(&mut self, style: Style) {
-        self.style = style;
+        for (_, s) in self.content.iter_mut() {
+            *s = style.clone();
+        }
     }
 }
 
@@ -250,41 +256,45 @@ impl<'a> Widget for CJKText<'a> {
         let mut dy = 0;
         let mut dx = 0;
 
-        let tokens = UnicodeSegmentation::graphemes(self.text, true);
+        for (text, style) in self.content.iter() {
+            let tokens = text.graphemes(true);
 
-        for token in tokens {
-            let token_width = UnicodeWidthStr::width_cjk(token) as u16;
-            if token_width + dx > area.width {
-                dx = 0;
-                dy += 1;
-            }
+            for token in tokens {
+                let token_width = token.width_cjk() as u16;
+                if token_width + dx > area.width {
+                    dx = 0;
+                    dy += 1;
+                }
 
-            buf.get_mut(dx + area.x, dy + area.y)
-                .set_symbol(token)
-                .set_style(self.style);
-            for i in 1..token_width {
-                buf.get_mut(dx + area.x + i, dy + area.y)
-                    .set_symbol("")
-                    .set_style(self.style);
+                buf.get_mut(dx + area.x, dy + area.y)
+                    .set_symbol(token)
+                    .set_style(style.clone());
+                for i in 1..token_width {
+                    buf.get_mut(dx + area.x + i, dy + area.y)
+                        .set_symbol("")
+                        .set_style(style.clone());
+                }
+                dx += token_width;
             }
-            dx += token_width;
         }
     }
 }
 
 impl<'a> DynHeight for CJKText<'a> {
     fn height(&self, width: u16) -> u16 {
-        let tokens = UnicodeSegmentation::graphemes(self.text, true);
-
-        let mut acc = 0;
         let mut result = 1;
-        for token in tokens {
-            let token_width = UnicodeWidthStr::width_cjk(token) as u16;
-            if token_width + acc > width {
-                acc = token_width;
-                result += 1;
-            } else {
-                acc += token_width;
+        let mut acc = 0;
+        for (text, _) in self.content.iter() {
+            let tokens = text.graphemes(true);
+
+            for token in tokens {
+                let token_width = token.width_cjk() as u16;
+                if token_width + acc > width {
+                    acc = token_width;
+                    result += 1;
+                } else {
+                    acc += token_width;
+                }
             }
         }
 
@@ -478,6 +488,7 @@ pub enum FilterListEvent {
 pub struct FilterList<'a> {
     tabs: &'a [&'a str],
     state: &'a [bool],
+    count: Option<&'a [usize]>,
 
     bound: Rect,
 }
@@ -488,7 +499,13 @@ impl<'a> FilterList<'a> {
             tabs,
             state,
             bound: Rect::default(),
+            count: None,
         }
+    }
+
+    pub fn counting(mut self, c: &'a [usize]) -> Self {
+        self.count = Some(c);
+        self
     }
 }
 
@@ -505,6 +522,7 @@ impl<'a> Widget for FilterList<'a> {
                 CJKText::new(VACANT_UNICODE)
             };
 
+            symbol.set_style(Style::default().fg(Color::Red));
             symbol.draw(Rect::new(viewport.x, viewport.y + dy, 2, 1), buf);
 
             let width = viewport.width - 2;
