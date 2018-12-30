@@ -48,6 +48,46 @@ pub struct CollectionEntry {
     pub subject: SubjectSmall,
 }
 
+impl CollectionEntry {
+    pub fn step_ep(&self, dist: i64) -> u64 {
+        if dist < 0 {
+            if self.ep_status < (-dist) as u64 {
+                0
+            } else {
+                self.ep_status - ((-dist) as u64)
+            }
+        } else {
+            let pending = self.ep_status + dist as u64;
+            match self.subject.eps_count {
+                Some(e) if e < pending => e,
+                _ => pending,
+            }
+        }
+    }
+
+    pub fn step_vol(&self, dist: i64) -> u64 {
+        if dist < 0 {
+            if self.vol_status < (-dist) as u64 {
+                0
+            } else {
+                self.vol_status - ((-dist) as u64)
+            }
+        } else {
+            let pending = self.vol_status + dist as u64;
+            match self.subject.vols_count {
+                Some(e) if e < pending => e,
+                _ => pending,
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ProgressPayload {
+    watched_eps: String,
+    watched_vols: Option<String>,
+}
+
 pub struct Client {
     settings: Settings,
 }
@@ -98,6 +138,32 @@ impl Client {
         .apply_auth(self)
         .send()
         .and_then(|mut resp| resp.json())
+        .map_err(|e| e.into())
+    }
+
+    pub fn progress(&self, coll: &CollectionEntry, ep: Option<u64>, vol: Option<u64>) -> impl Future<Item = (), Error = failure::Error> {
+        let ep = ep.unwrap_or(coll.ep_status);
+        let vol = vol.unwrap_or(coll.vol_status);
+
+        let payload = ProgressPayload {
+            watched_eps: ep.to_string(),
+            watched_vols: if coll.subject.subject_type == SubjectType::Book {
+                Some(vol.to_string())
+            } else {
+                None
+            },
+        };
+
+        let c = req::Client::new();
+        c.post(&format!(
+            "{}/subject/{}/update/watched_eps",
+            API_ROOT!(),
+            coll.subject.id,
+        ))
+        .apply_auth(self)
+        .form(&payload)
+        .send()
+        .map(|_| ()) // TODO: handle response
         .map_err(|e| e.into())
     }
 }

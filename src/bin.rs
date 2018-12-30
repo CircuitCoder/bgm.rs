@@ -237,6 +237,12 @@ enum FetchResult<T> {
     Deferred,
 }
 
+enum InnerState<T> {
+    Fetching,
+    Fetched(T),
+    Discarded,
+}
+
 impl<T> Into<Option<T>> for FetchResult<T> {
     fn into(self) -> Option<T> {
         match self {
@@ -249,7 +255,7 @@ impl<T> Into<Option<T>> for FetchResult<T> {
 struct AppStateInner {
     notifier: Sender<()>,
 
-    collections: Option<Vec<CollectionEntry>>,
+    collections: InnerState<Vec<CollectionEntry>>,
 }
 
 struct AppState {
@@ -269,7 +275,7 @@ impl AppState {
 
             inner: Arc::new(Mutex::new(AppStateInner {
                 notifier,
-                collections: None,
+                collections: InnerState::Fetching,
             })),
 
             rt: tokio::runtime::Runtime::new().expect("Cannot create runtime!"),
@@ -280,10 +286,16 @@ impl AppState {
 
     fn fetch_collection(&mut self) -> FetchResult<Vec<CollectionEntry>> {
         if self.fetching_collection {
-            if let Some(ref entries) = self.inner.lock().unwrap().collections {
-                return FetchResult::Direct(entries.clone());
-            } else {
-                return FetchResult::Deferred;
+            let mut guard = self.inner.lock().unwrap();
+            match guard.collections {
+                InnerState::Fetched(ref entries) =>
+                    return FetchResult::Direct(entries.clone()),
+                InnerState::Fetching =>
+                    return FetchResult::Deferred,
+                _ => {
+                    // Else: discarded, restart fetch
+                    guard.collections = InnerState::Fetching;
+                }
             }
         }
 
@@ -296,7 +308,7 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                inner.collections = Some(resp);
+                inner.collections = InnerState::Fetched(resp);
                 inner
                     .notifier
                     .send(())
@@ -307,6 +319,24 @@ impl AppState {
         self.rt.spawn(fut);
 
         FetchResult::Deferred
+    }
+
+    fn update_progress(&mut self, subject: &CollectionEntry, ep: Option<u64>, vol: Option<u64>) {
+        let fut = self.client.progress(subject, ep, vol);
+        let handle = self.inner.clone();
+
+        let fut = fut
+            .map(move |_| {
+                let mut inner = handle.lock().unwrap();
+
+                inner.collections = InnerState::Discarded;
+                inner
+                    .notifier
+                    .send(())
+                    .expect("Unable to notify the main thread");
+            })
+            .map_err(|e| println!("{}", e));
+        self.rt.spawn(fut);
     }
 }
 
@@ -424,7 +454,7 @@ impl UIState {
         }
     }
 
-    pub fn reduce(&mut self, ev: UIEvent) -> &mut Self {
+    pub fn reduce(&mut self, ev: UIEvent, app: &mut AppState) -> &mut Self {
         use termion::event::{Key, MouseEvent};
 
         match ev {
@@ -446,6 +476,34 @@ impl UIState {
                         self.focus = Some(f - 1);
                         self.pending = Some(PendingUIEvent::ScrollIntoView(f - 1));
                     }
+                }
+            }
+            UIEvent::Key(Key::Char('+')) if self.focus.is_some() => {
+                let focus = self.focus.unwrap();
+                let collection = app.fetch_collection().into();
+                let target = self.do_filter(&collection).skip(focus).next();
+
+                if let Some(t) = target {
+                    let (ep, vol) = match t.subject.subject_type {
+                        SubjectType::Book => (None, Some(t.step_vol(1))),
+                        _ => (Some(t.step_ep(1)), None),
+                    };
+
+                    app.update_progress(t, ep, vol);
+                }
+            }
+            UIEvent::Key(Key::Char('-')) if self.focus.is_some() => {
+                let focus = self.focus.unwrap();
+                let collection = app.fetch_collection().into();
+                let target = self.do_filter(&collection).skip(focus).next();
+
+                if let Some(t) = target {
+                    let (ep, vol) = match t.subject.subject_type {
+                        SubjectType::Book => (None, Some(t.step_vol(-1))),
+                        _ => (Some(t.step_ep(-1)), None),
+                    };
+
+                    app.update_progress(t, ep, vol);
                 }
             }
             UIEvent::Key(Key::Char('\t')) => {
@@ -693,7 +751,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         break 'main;
                     }
 
-                    ui.reduce(event);
+                    ui.reduce(event, &mut app);
                 } else {
                     oper.recv(&apprx).unwrap();
                 }
