@@ -1,4 +1,4 @@
-use bgmtv::client::CollectionEntry;
+use bgmtv::client::{CollectionEntry, SubjectType};
 use tui::buffer::Buffer;
 use tui::layout::Rect;
 use tui::style::{Color, Style};
@@ -295,17 +295,33 @@ pub enum ViewingEntryEvent {
 pub struct ViewingEntry<'a> {
     coll: &'a CollectionEntry,
     text: CJKText<'a>,
+    text_cn: CJKText<'a>,
+    progress: Option<ViewProgress>,
 
     selected: bool,
 }
 
 impl<'a> ViewingEntry<'a> {
     pub fn new(ent: &'a CollectionEntry) -> Self {
-        let text = CJKText::new(ent.subject.name.as_str());
+        let mut text = CJKText::new(ent.subject.name.as_str());
+        text.set_style(Style::default().fg(Color::Yellow));
+        let text_cn = CJKText::new(ent.subject.name_cn.as_str());
+
+        let progress = match ent.subject.subject_type {
+            SubjectType::Book if ent.subject.vols_count.is_some() =>
+                Some(ViewProgress::new(ent.subject.vols_count.unwrap(), ent.vol_status)),
+            SubjectType::Anime if ent.subject.eps_count.is_some() =>
+                Some(ViewProgress::new(ent.subject.eps_count.unwrap(), ent.ep_status)),
+            _ => None,
+        };
+
         Self {
             coll: ent,
-            selected: false,
             text,
+            text_cn,
+            progress,
+
+            selected: false,
         }
     }
 
@@ -327,12 +343,25 @@ impl<'a> Widget for ViewingEntry<'a> {
         b.draw(area, buf);
         let inner = b.inner(area);
         self.text.draw(inner, buf);
+
+        let occupied_height = self.text.height(inner.width);
+        let new_area = Rect::new(inner.x, inner.y + occupied_height, inner.width, inner.height - occupied_height);
+        self.text_cn.draw(new_area, buf);
+
+        if let Some(ref mut progress) = self.progress {
+            let occupied_height = self.text_cn.height(inner.width) + 1;
+
+            let new_area = Rect::new(new_area.x, new_area.y + occupied_height, new_area.width, new_area.height - occupied_height);
+            progress.draw(new_area, buf);
+        }
     }
 }
 
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
-        self.text.height(width - 2) + 2
+        2 + self.text.height(width - 2)
+            + self.text_cn.height(width - 2)
+            + self.progress.as_ref().map(|p| p.height(width - 2) + 1).unwrap_or(0)
     }
 }
 
@@ -484,5 +513,64 @@ impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
 
     fn set_bound(&mut self, area: Rect) {
         self.bound = area;
+    }
+}
+
+struct ViewProgress {
+    total: u64,
+    current: u64,
+}
+
+impl ViewProgress {
+    fn new(total: u64, current: u64) -> Self {
+        Self {
+            total,
+            current,
+        }
+    }
+}
+
+const SHADE: &str = "▒";
+
+impl Widget for ViewProgress {
+    fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
+        // Write digits
+        let text = format!("{} / {}", self.current, self.total);
+        let mut text_widget = CJKText::new(&text);
+        text_widget.draw(viewport, buf);
+
+        let text_height = text_widget.height(viewport.width);
+
+        // Draw blocks
+        for i in 0..self.total as u16 {
+            let dy = i / viewport.width;
+            let dx = i % viewport.width;
+
+            if dy + text_height >= viewport.height {
+                break;
+            }
+
+            let (style, symbol) = if (i as u64) < self.current {
+                (Style::default().fg(Color::White), symbols::block::FULL)
+            } else {
+                (Style::default(), SHADE)
+            };
+
+            buf.get_mut(viewport.x + dx, viewport.y + text_height + dy)
+                .set_symbol(symbol)
+                .set_style(style);
+        }
+    }
+}
+
+impl DynHeight for ViewProgress {
+    fn height(&self, width: u16) -> u16 {
+        if width == 0 {
+            0
+        } else {
+            let text = format!("{} / {}", self.current, self.total);
+            let text_widget = CJKText::new(&text);
+            text_widget.height(width) + (self.total as u16 + width - 1) / width
+        }
     }
 }
