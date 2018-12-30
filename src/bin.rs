@@ -659,10 +659,26 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         .map(|(name, _)| *name)
                         .collect::<Vec<&'static str>>();
                     let mut filters = FilterList::with(&filter_names, &ui.filters);
-                    filters.set_bound(filter_inner);
-                    filters.render(&mut f, filter_inner);
 
                     let collection = app.fetch_collection();
+
+                    let mut count = None;
+                    if let FetchResult::Direct(ref collection) = collection {
+                        count = Some(SELECTS.iter().map(|(_, t)| {
+                            let mut c = 0;
+                            for ent in collection {
+                                if &ent.subject.subject_type == t {
+                                    c += 1;
+                                }
+                            }
+
+                            c
+                        }).collect::<Vec<usize>>());
+
+                        filters = filters.counting(count.as_ref().unwrap());
+                    }
+                    filters.set_bound(filter_inner);
+                    filters.render(&mut f, filter_inner);
 
                     if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
                         if filter_inner.contains(x, y) {

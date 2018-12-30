@@ -228,8 +228,8 @@ impl<'a> CJKText<'a> {
         Self { content: [(text, Style::default())].to_vec() }
     }
 
-    pub fn raw(content: Vec<(&'a str, Style)>) -> Self {
-        Self { content }
+    pub fn raw<T: Into<Vec<(&'a str, Style)>>>(content: T) -> Self {
+        Self { content: content.into() }
     }
 
     pub fn oneline_min_width(&self) -> u16 {
@@ -524,7 +524,24 @@ impl<'a> Widget for FilterList<'a> {
             symbol.draw(Rect::new(viewport.x, viewport.y + dy, 2, 1), buf);
 
             let width = viewport.width - 2;
-            let mut text = CJKText::new(tab);
+            let text_style = if Some(&true) == self.state.get(i) {
+                Style::default().fg(Color::White)
+            } else {
+                Style::default()
+            };
+
+            let count = self.count.and_then(|count| count.get(i)).map(|count| format!("({})", count));
+            let mut text = if let Some(ref count) = count {
+                CJKText::raw([
+                    (*tab, text_style),
+                    (" ", Style::default()),
+                    (count, Style::default().fg(Color::Yellow)),
+                ].to_vec())
+            } else {
+                let mut t = CJKText::new(tab);
+                t.set_style(text_style);
+                t
+            };
             let height = text.height(width);
 
             let area = Rect::new(viewport.x + 2, viewport.y + dy, width, height);
@@ -541,7 +558,16 @@ impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
         let mut counter = 0;
         for (i, tab) in self.tabs.iter().enumerate() {
             let width = self.bound.width - 2;
-            let text = CJKText::new(tab);
+            let count = self.count.and_then(|count| count.get(i)).map(|count| format!("({})", count));
+            let text = if let Some(ref count) = count {
+                CJKText::raw([
+                    (*tab, Style::default()),
+                    (" ", Style::default()),
+                    (count, Style::default()),
+                ].to_vec())
+            } else {
+                CJKText::new(tab)
+            };
             let height = text.height(width);
             counter += height;
 
