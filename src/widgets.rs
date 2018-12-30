@@ -200,33 +200,49 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
     }
 }
 
-pub enum ViewingEntryEvent {
-    Click,
+pub struct CJKText<'a> {
+    text: &'a str,
 }
 
-pub struct ViewingEntry<'a> {
-    coll: &'a CollectionEntry,
-
-    selected: bool,
+impl<'a> CJKText<'a> {
+    fn new(text: &'a str) -> Self {
+        Self { text }
+    }
 }
 
-impl<'a> ViewingEntry<'a> {
-    pub fn new(ent: &'a CollectionEntry) -> Self {
-        Self { coll: ent, selected: false }
-    }
+impl<'a> Widget for CJKText<'a> {
+    fn draw(&mut self, area: Rect, buf: &mut Buffer) {
+        // Draw title
+        let mut dy = 0;
+        let mut dx = 0;
 
-    pub fn select(&mut self, s: bool) {
-        self.selected = s;
-    }
+        let tokens = UnicodeSegmentation::graphemes(self.text, true);
 
-    fn title_height(&self, inner_width: u16) -> u16 {
-        let tokens = UnicodeSegmentation::graphemes(self.coll.subject.name.as_str(), true);
+        for token in tokens {
+            let token_width = UnicodeWidthStr::width_cjk(token) as u16;
+            if token_width + dx > area.width {
+                dx = 0;
+                dy += 1;
+            }
+
+            buf.get_mut(dx + area.x, dy + area.y).set_symbol(token);
+            for i in 1..token_width {
+                buf.get_mut(dx + area.x + i, dy + area.y).set_symbol("");
+            }
+            dx += token_width;
+        }
+    }
+}
+
+impl<'a> DynHeight for CJKText<'a> {
+    fn height(&self, width: u16) -> u16 {
+        let tokens = UnicodeSegmentation::graphemes(self.text, true);
 
         let mut acc = 0;
         let mut result = 1;
         for token in tokens {
             let token_width = UnicodeWidthStr::width_cjk(token) as u16;
-            if token_width + acc > inner_width {
+            if token_width + acc > width {
                 acc = token_width;
                 result += 1;
             } else {
@@ -235,6 +251,29 @@ impl<'a> ViewingEntry<'a> {
         }
 
         result
+    }
+}
+
+
+pub enum ViewingEntryEvent {
+    Click,
+}
+
+pub struct ViewingEntry<'a> {
+    coll: &'a CollectionEntry,
+    text: CJKText<'a>,
+
+    selected: bool,
+}
+
+impl<'a> ViewingEntry<'a> {
+    pub fn new(ent: &'a CollectionEntry) -> Self {
+        let text = CJKText::new(ent.subject.name.as_str());
+        Self { coll: ent, selected: false, text }
+    }
+
+    pub fn select(&mut self, s: bool) {
+        self.selected = s;
     }
 }
 
@@ -250,34 +289,13 @@ impl<'a> Widget for ViewingEntry<'a> {
 
         b.draw(area, buf);
         let inner = b.inner(area);
-
-        // Draw title
-        let mut dy = 0;
-        let mut dx = 0;
-
-        let name = self.coll.subject.name.as_str();
-
-        let tokens = UnicodeSegmentation::graphemes(name, true);
-
-        for token in tokens {
-            let token_width = UnicodeWidthStr::width_cjk(token) as u16;
-            if token_width + dx > inner.width {
-                dx = 0;
-                dy += 1;
-            }
-
-            buf.get_mut(dx + inner.x, dy + inner.y).set_symbol(token);
-            for i in 1..token_width {
-                buf.get_mut(dx + inner.x + i, dy + inner.y).set_symbol("");
-            }
-            dx += token_width;
-        }
+        self.text.draw(inner, buf);
     }
 }
 
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
-        self.title_height(width - 2) + 2
+        self.text.height(width - 2) + 2
     }
 }
 
