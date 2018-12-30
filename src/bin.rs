@@ -300,7 +300,7 @@ impl AppState {
     }
 }
 
-const TABS: [&str; 1] = ["Collections"];
+const TABS: [&str; 2] = ["格子", "康康"];
 const SELECTS: [(&str, SubjectType); 3] = [
     ("Anime", SubjectType::Anime),
     ("Book", SubjectType::Book),
@@ -469,12 +469,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
                 .split(cursize);
 
-            Tabs::default()
-                .block(Block::default().borders(Borders::ALL).title("bgmTTY"))
-                .titles(&TABS)
-                .style(Style::default().fg(Color::Green))
-                .select(0)
-                .render(&mut f, chunks[0]);
+            let mut tab_block = Block::default().borders(Borders::ALL).title("bgmTTY");
+            tab_block.render(&mut f, chunks[0]);
+            let tab_inner = tab_block.inner(chunks[0]);
+            Tabber::with(&TABS).select(ui.tab).render(&mut f, tab_inner);
 
             match ui.tab {
                 0 => {

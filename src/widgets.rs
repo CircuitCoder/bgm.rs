@@ -214,11 +214,24 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
 
 pub struct CJKText<'a> {
     text: &'a str,
+
+    style: Style,
 }
 
 impl<'a> CJKText<'a> {
-    fn new(text: &'a str) -> Self {
-        Self { text }
+    pub fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            style: Style::default(),
+        }
+    }
+
+    pub fn oneline_min_width(&self) -> u16 {
+        UnicodeWidthStr::width_cjk(self.text) as u16
+    }
+
+    pub fn set_style(&mut self, style: Style) {
+        self.style = style;
     }
 }
 
@@ -237,9 +250,9 @@ impl<'a> Widget for CJKText<'a> {
                 dy += 1;
             }
 
-            buf.get_mut(dx + area.x, dy + area.y).set_symbol(token);
+            buf.get_mut(dx + area.x, dy + area.y).set_symbol(token).set_style(self.style);
             for i in 1..token_width {
-                buf.get_mut(dx + area.x + i, dy + area.y).set_symbol("");
+                buf.get_mut(dx + area.x + i, dy + area.y).set_symbol("").set_style(self.style);
             }
             dx += token_width;
         }
@@ -317,5 +330,56 @@ impl<'a> DynHeight for ViewingEntry<'a> {
 impl<'a> Intercept<ViewingEntryEvent> for ViewingEntry<'a> {
     fn intercept(&mut self, _: u16, _: u16) -> Option<ViewingEntryEvent> {
         Some(ViewingEntryEvent::Click)
+    }
+}
+
+enum TabberEvent {
+    Select(usize),
+}
+
+pub struct Tabber<'a> {
+    tabs: &'a [&'a str],
+    selected: Option<usize>,
+}
+
+impl<'a> Tabber<'a> {
+    pub fn with(tabs: &'a [&'a str]) -> Self {
+        Self {
+            tabs,
+            selected: None,
+        }
+    }
+
+    pub fn select(mut self, index: usize) -> Self {
+        self.selected = Some(index);
+        self
+    }
+}
+
+impl<'a> Widget for Tabber<'a> {
+    fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
+        let mut dx = 1;
+
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let mut text = CJKText::new(tab);
+
+            if Some(i) == self.selected {
+                text.set_style(Style::default().fg(Color::Green));
+            }
+
+            let width = text.oneline_min_width();
+            let maxwidth = viewport.width - dx;
+
+            let width = std::cmp::min(width, maxwidth);
+
+            if width == 0 {
+                break;
+            }
+
+            let area = Rect::new(viewport.x + dx, viewport.y, width, viewport.height);
+            text.draw(area, buf);
+
+            dx += width + 2;
+        }
     }
 }
