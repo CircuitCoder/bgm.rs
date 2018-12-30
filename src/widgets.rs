@@ -15,7 +15,7 @@ pub trait DynHeight: Widget {
 
 pub trait Intercept<Event> {
     fn intercept(&mut self, x: u16, y: u16, btn: MouseButton) -> Option<Event>;
-    fn set_bound(&mut self, area: Rect) {}
+    fn set_bound(&mut self, _area: Rect) {}
 }
 
 pub enum ScrollEvent {
@@ -409,6 +409,73 @@ impl<'a> Intercept<TabberEvent> for Tabber<'a> {
 
             if counter > dx {
                 return Some(TabberEvent::Select(i));
+            }
+        }
+
+        None
+    }
+
+    fn set_bound(&mut self, area: Rect) {
+        self.bound = area;
+    }
+}
+
+pub enum FilterListEvent {
+    Toggle(usize),
+}
+
+pub struct FilterList<'a> {
+    tabs: &'a [&'a str],
+    state: &'a [bool],
+
+    bound: Rect,
+}
+
+impl<'a> FilterList<'a> {
+    pub fn with(tabs: &'a [&'a str], state: &'a [bool]) -> Self {
+        Self { tabs, state, bound: Rect::default() }
+    }
+}
+
+const VACANT_UNICODE: &str = "☐";
+const SELECTED_UNICODE: &str = "✓";
+
+impl<'a> Widget for FilterList<'a> {
+    fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
+        let mut dy = 0;
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let mut symbol = if Some(&true) == self.state.get(i) {
+                CJKText::new(SELECTED_UNICODE)
+            } else {
+                CJKText::new(VACANT_UNICODE)
+            };
+
+            symbol.draw(Rect::new(viewport.x, viewport.y + dy, 2, 1), buf);
+
+            let width = viewport.width - 2;
+            let mut text = CJKText::new(tab);
+            let height = text.height(width);
+            
+            let area = Rect::new(viewport.x + 2, viewport.y + dy, width, height);
+            text.draw(area, buf);
+
+            dy += height;
+        }
+    }
+}
+
+impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
+    fn intercept(&mut self, _x: u16, y: u16, _: MouseButton) -> Option<FilterListEvent> {
+        let dy = y - self.bound.y;
+        let mut counter = 0;
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let width = self.bound.width - 2;
+            let text = CJKText::new(tab);
+            let height = text.height(width);
+            counter += height;
+
+            if counter > dy {
+                return Some(FilterListEvent::Toggle(i));
             }
         }
 

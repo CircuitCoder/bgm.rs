@@ -300,11 +300,11 @@ impl AppState {
     }
 }
 
-const TABS: [&str; 2] = ["格子", "康康"];
+const TABS: [&str; 2] = ["格子", "搜索"];
 const SELECTS: [(&str, SubjectType); 3] = [
-    ("Anime", SubjectType::Anime),
-    ("Book", SubjectType::Book),
-    ("Real", SubjectType::Real),
+    ("动画骗", SubjectType::Anime),
+    ("小书本", SubjectType::Book),
+    ("三刺螈", SubjectType::Real),
 ];
 
 enum UIEvent {
@@ -320,7 +320,7 @@ enum PendingUIEvent {
 
 struct UIState {
     tab: usize,
-    filter: [bool; SELECTS.len()],
+    filters: [bool; SELECTS.len()],
     scroll: u16,
     focus: Option<usize>,
     focus_limit: usize,
@@ -332,7 +332,7 @@ impl Default for UIState {
     fn default() -> UIState {
         UIState {
             tab: 0,
-            filter: [true; SELECTS.len()],
+            filters: [true; SELECTS.len()],
 
             scroll: 0,
             focus: None,
@@ -370,6 +370,12 @@ impl UIState {
                     self.focus = Some(mf - 1);
                 }
             }
+        }
+    }
+
+    fn toggle_filter(&mut self, index: usize) {
+        if let Some(f) = self.filters.get_mut(index) {
+            *f = !*f;
         }
     }
 
@@ -443,11 +449,22 @@ impl UIState {
 
 trait RectExt {
     fn contains(&self, x: u16, y: u16) -> bool;
+    fn padding_hoz(self, p: u16) -> Self;
 }
 
 impl RectExt for tui::layout::Rect {
     fn contains(&self, x: u16, y: u16) -> bool {
         return x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height;
+    }
+
+    fn padding_hoz(mut self, p: u16) -> Self {
+        self.x += p;
+        if self.width >= p * 2 {
+            self.width -= p * 2;
+        } else {
+            self.width = 0;
+        }
+        self
     }
 }
 
@@ -509,19 +526,25 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         .constraints([Constraint::Min(20), Constraint::Percentage(100)].as_ref())
                         .split(chunks[1]);
 
-                    SelectableList::default()
-                        .block(Block::default().title("Filter").borders(Borders::ALL))
-                        .items(
-                            &SELECTS
-                                .iter()
-                                .map(|(name, _)| *name)
-                                .collect::<Vec<&'static str>>(),
-                        )
-                        .select(Some(1))
-                        .style(Style::default().fg(Color::White))
-                        .highlight_style(Style::default().modifier(Modifier::Italic))
-                        .highlight_symbol(">>")
-                        .render(&mut f, subchunks[0]);
+                    let mut filter_block = Block::default().borders(Borders::ALL);
+                    filter_block.render(&mut f, subchunks[0]);
+                    let filter_inner = filter_block.inner(subchunks[0]).padding_hoz(1);
+                    let filter_names = SELECTS
+                        .iter()
+                        .map(|(name, _)| *name)
+                        .collect::<Vec<&'static str>>();
+                    let mut filters = FilterList::with(&filter_names, &ui.filters);
+                    filters.set_bound(filter_inner);
+                    filters.render(&mut f, filter_inner);
+
+                    if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
+                        if filter_inner.contains(x, y) {
+                            match filters.intercept(x, y, btn) {
+                                Some(FilterListEvent::Toggle(i)) => ui.toggle_filter(i),
+                                _ => {}
+                            }
+                        }
+                    }
 
                     let collection = app.fetch_collection();
 
