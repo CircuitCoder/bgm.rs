@@ -286,6 +286,35 @@ impl RectExt for tui::layout::Rect {
     }
 }
 
+trait CollectionStatusExt {
+    fn disp(&self) -> &'static str;
+    fn rotate(&self) -> Self;
+}
+
+impl CollectionStatusExt for CollectionStatus {
+    fn disp(&self) -> &'static str {
+        use bgmtv::client::CollectionStatus::*;
+        match self {
+            Wished => "打算做",
+            Doing => "在做了",
+            Done => "完成了",
+            OnHold => "摸了",
+            Dropped => "没得了",
+        }
+    }
+
+    fn rotate(&self) -> Self {
+        use bgmtv::client::CollectionStatus::*;
+        match self {
+            Wished => Doing,
+            Doing => Done,
+            Done => OnHold,
+            OnHold => Dropped,
+            Dropped => Wished,
+        }
+    }
+}
+
 fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let stdout = std::io::stdout().into_raw_mode()?;
     let stdout = termion::input::MouseTerminal::from(stdout);
@@ -532,13 +561,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     scroll.push(&mut title_spacer);
 
                                     if let Some(detail) = detail {
-                                        let status = match detail.status {
-                                            CollectionStatus::Wished => "打算做",
-                                            CollectionStatus::Doing => "在做了",
-                                            CollectionStatus::Done => "完成了",
-                                            CollectionStatus::OnHold => "摸了",
-                                            CollectionStatus::Dropped => "没得了",
-                                        };
+                                        let status = detail.status.disp();
                                         let mut status_text = CJKText::raw([
                                             ("状态: ", Style::default().fg(Color::Blue)),
                                             (status, Style::default())
@@ -554,7 +577,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                             (&score, Style::default())
                                         ].to_vec());
 
-                                        let tag = detail.tag.join(", ");
+                                        let tag = detail.tag.join(",");
                                         let mut tag_text = CJKText::raw([
                                             ("标签: ", Style::default().fg(Color::Blue)),
                                             (&tag, Style::default())

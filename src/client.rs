@@ -2,6 +2,7 @@ use crate::settings::Settings;
 use futures::prelude::*;
 use reqwest::r#async as req;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -101,6 +102,25 @@ pub enum CollectionStatus {
     Dropped,
 }
 
+impl CollectionStatus {
+    fn id(&self) -> &'static str {
+        use crate::client::CollectionStatus::*;
+        match self {
+            Wished => "wish",
+            Done => "collect",
+            Doing => "do",
+            OnHold => "on_hold",
+            Dropped => "dropped",
+        }
+    }
+}
+
+impl Default for CollectionStatus {
+    fn default() -> Self {
+        CollectionStatus::Doing
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CollectionDetail {
     pub status: CollectionStatus,
@@ -197,6 +217,34 @@ impl Client {
                 APIResp::Success(payload) => Some(payload),
             }
         })
+        .map_err(|e| e.into())
+    }
+
+    pub fn update_collection_detail(
+        &self,
+        id: u64,
+        status: CollectionStatus,
+        aux: Option<CollectionDetail>,
+    ) -> impl Future<Item = CollectionDetail, Error = failure::Error> {
+        let c = req::Client::new();
+
+        let mut payload = HashMap::new();
+        payload.insert("status", status.id().to_string());
+        if let Some(content) = aux {
+            payload.insert("rating", content.rating.to_string());
+            payload.insert("comment", content.comment);
+            payload.insert("tag", content.tag.join(","));
+        }
+
+        c.post(&format!(
+            "{}/collection/{}/update",
+            API_ROOT!(),
+            id,
+        ))
+        .form(&payload)
+        .apply_auth(self)
+        .send()
+        .and_then(|mut resp| resp.json())
         .map_err(|e| e.into())
     }
 

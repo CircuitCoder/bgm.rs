@@ -1,7 +1,8 @@
-use bgmtv::client::{CollectionEntry, CollectionDetail, SubjectType, SubjectSmall, Client};
+use bgmtv::client::{CollectionEntry, CollectionDetail, CollectionStatus, SubjectType, SubjectSmall, Client};
 use crossbeam_channel::{Sender};
 use std::sync::{Arc, Mutex};
 use futures::future::Future;
+use crate::CollectionStatusExt;
 
 #[derive(Clone)]
 pub enum FetchResult<T> {
@@ -152,6 +153,16 @@ impl AppState {
         msgs[msgs.len()-1].clone()
     }
 
+    pub fn fetch_collection_detail_weak(&mut self) -> FetchResult<(u64, Option<CollectionDetail>)> {
+        let mut guard = self.inner.lock().unwrap();
+        match guard.collection_detail {
+            InnerState::Fetched(id, ref result) =>
+                FetchResult::Direct((id, result.clone())),
+            _ =>
+                FetchResult::Deferred,
+        }
+    }
+
     pub fn fetch_collection_detail(&mut self, id: u64) -> FetchResult<Option<CollectionDetail>> {
         let mut guard = self.inner.lock().unwrap();
         match guard.collection_detail {
@@ -193,6 +204,36 @@ impl AppState {
         self.rt.spawn(fut);
 
         FetchResult::Deferred
+    }
+
+    pub fn update_collection_detail(&mut self, id: u64, status: CollectionStatus, original: Option<CollectionDetail>) {
+        let mut guard = self.inner.lock().unwrap();
+        guard.messages.push("更新更新...".to_string());
+        guard.notifier.send(()).unwrap();
+        drop(guard);
+
+        let fut = self.client.update_collection_detail(id, status, original);
+        let handle = self.inner.clone();
+
+        let fut = fut
+            .map(move |resp| {
+                let mut inner = handle.lock().unwrap();
+
+                match inner.collection_detail {
+                    InnerState::Fetching(oid) | InnerState::Fetched(oid, _) if oid == id => {
+                        inner.collection_detail = InnerState::Fetched(id, Some(resp));
+                        inner.messages.push("收藏更新完成！".to_string());
+                        inner
+                            .notifier
+                            .send(())
+                            .expect("Unable to notify the main thread");
+                    }
+                    _ => {}
+                }
+            })
+            .map_err(|e| println!("{}", e));
+
+        self.rt.spawn(fut);
     }
 
     pub fn fetch_subject(&mut self, id: u64) -> FetchResult<SubjectSmall> {
@@ -259,21 +300,33 @@ pub enum PendingUIEvent {
     Quit,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum LongCommand {
     Absent,
     Tab,
     Command(String),
     Toggle,
+
+    EditRating,
+    EditStatus(CollectionStatus),
 }
 
 impl LongCommand {
+    pub fn present(&self) -> bool {
+        match self {
+            LongCommand::Absent => false,
+            _ => true,
+        }
+    }
+
     pub fn prompt(&self) -> Option<String> {
         match self {
             LongCommand::Absent => None,
             LongCommand::Tab => Some("g".to_string()),
             LongCommand::Command(ref inner) => Some(format!(":{}", inner)),
             LongCommand::Toggle => Some("t".to_string()),
+            LongCommand::EditRating => Some("评分 (0-10): ".to_string()),
+            LongCommand::EditStatus(s) => Some(format!("状态: {} [Tab]", s.disp())),
         }
     }
 }
@@ -395,7 +448,7 @@ impl UIState {
     pub fn reduce(&mut self, ev: UIEvent, app: &mut AppState) -> &mut Self {
         use termion::event::{Key, MouseEvent};
 
-        if LongCommand::Absent != self.command {
+        if self.command.present() {
             if ev == UIEvent::Key(Key::Esc) {
                 self.command = LongCommand::Absent;
                 return self;
@@ -456,6 +509,31 @@ impl UIState {
                             let i = i.to_digit(10).unwrap();
                             if let Some(filter) = self.filters.get_mut(i as usize - 1) {
                                 *filter = !*filter;
+                            }
+
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(_) => {
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        _ => {}
+                    }
+                }
+
+                LongCommand::EditStatus(ref mut current) => {
+                    match ev {
+                        UIEvent::Key(Key::Char('\t')) => {
+                            *current = current.rotate();
+                            return self;
+                        }
+                        UIEvent::Key(Key::Char('\n')) => {
+                            // TODO: potential racing here.
+                            if let FetchResult::Direct((id, coll)) = app.fetch_collection_detail_weak() {
+                                if Some(id) == self.editing {
+                                    app.update_collection_detail(id, current.clone(), coll);
+                                }
                             }
 
                             self.command = LongCommand::Absent;
@@ -540,6 +618,18 @@ impl UIState {
                 }
             }
             UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
+
+            UIEvent::Key(Key::Char('s')) if self.tab == 1 => {
+                if let FetchResult::Direct((_, coll)) = app.fetch_collection_detail_weak() {
+                    let initial = if let Some(coll) = coll {
+                        coll.status
+                    } else {
+                        Default::default()
+                    };
+                    self.command = LongCommand::EditStatus(initial);
+                }
+            }
+
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,
             UIEvent::Key(Key::Char(':')) => self.command = LongCommand::Command(String::new()),
