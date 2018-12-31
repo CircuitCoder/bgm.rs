@@ -416,8 +416,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             let status_inner = chunks[2].padding_hoz(1);
             status_line.render(&mut f, status_inner);
 
-            match ui.tab {
-                0 => {
+            match ui.active_tab() {
+                Tab::Collection => {
                     // Render collections
                     let subchunks = Layout::default()
                         .direction(Direction::Horizontal)
@@ -543,99 +543,92 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             .render(&mut f, region);
                     };
                 }
-                1 => {
+                Tab::Search => {
+                    CJKText::new("还没写呢 ฅ^•ﻌ•^ฅ!").render(&mut f, chunks[1].padding_hoz(2));
+                }
+                Tab::Subject(id) => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
                     SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
                     SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y-1, 1, 1));
                     let inner = block.inner(chunks[1]).padding_left(1);
 
-                    match ui.editing {
-                        None => {
-                            CJKText::new("在格子或搜索 Tab 中选中一个条目按 Enter，或双击查看细节").render(&mut f, inner);
+                    use tui::style::*;
+
+                    let detail = app.fetch_collection_detail(*id);
+                    let subject = app.fetch_subject(*id);
+                    match detail + subject {
+                        FetchResult::Deferred => {
+                            let text = format!("猫咪检索中... ID: {}", id);
+                            CJKText::new(&text).render(&mut f, inner);
                         }
-                        Some(editing) => {
-                            use tui::style::*;
+                        FetchResult::Direct((detail, subject)) => {
+                            let mut scroll = Scroll::default();
 
-                            let detail = app.fetch_collection_detail(editing);
-                            let subject = app.fetch_subject(editing);
-                            match detail + subject {
-                                FetchResult::Deferred => {
-                                    let text = format!("猫咪检索中... ID: {}", editing);
-                                    CJKText::new(&text).render(&mut f, inner);
-                                }
-                                FetchResult::Direct((detail, subject)) => {
-                                    let mut scroll = Scroll::default();
+                            let mut title_text = CJKText::new(&subject.name);
+                            title_text.set_style(Style::default().fg(Color::Yellow));
+                            let mut title_cn_text = CJKText::new(&subject.name_cn);
 
-                                    let mut title_text = CJKText::new(&subject.name);
-                                    title_text.set_style(Style::default().fg(Color::Yellow));
-                                    let mut title_cn_text = CJKText::new(&subject.name_cn);
+                            let mut title_spacer = CJKText::new("");
 
-                                    let mut title_spacer = CJKText::new("");
+                            scroll.push(&mut title_text);
+                            scroll.push(&mut title_cn_text);
+                            scroll.push(&mut title_spacer);
 
-                                    scroll.push(&mut title_text);
-                                    scroll.push(&mut title_cn_text);
-                                    scroll.push(&mut title_spacer);
+                            if let Some(detail) = detail {
+                                let status = detail.status.disp();
+                                let mut status_text = CJKText::raw([
+                                    ("状态: ", Style::default().fg(Color::Blue)),
+                                    (status, Style::default())
+                                ].to_vec());
 
-                                    if let Some(detail) = detail {
-                                        let status = detail.status.disp();
-                                        let mut status_text = CJKText::raw([
-                                            ("状态: ", Style::default().fg(Color::Blue)),
-                                            (status, Style::default())
-                                        ].to_vec());
+                                let score = if detail.rating == 0 {
+                                    "未评分".to_string()
+                                } else {
+                                    format!("{} / 10", detail.rating)
+                                };
+                                let mut score_text = CJKText::raw([
+                                    ("评分: ", Style::default().fg(Color::Blue)),
+                                    (&score, Style::default())
+                                ].to_vec());
 
-                                        let score = if detail.rating == 0 {
-                                            "未评分".to_string()
-                                        } else {
-                                            format!("{} / 10", detail.rating)
-                                        };
-                                        let mut score_text = CJKText::raw([
-                                            ("评分: ", Style::default().fg(Color::Blue)),
-                                            (&score, Style::default())
-                                        ].to_vec());
+                                let tag = detail.tag.join(",");
+                                let mut tag_text = CJKText::raw([
+                                    ("标签: ", Style::default().fg(Color::Blue)),
+                                    (&tag, Style::default())
+                                ].to_vec());
 
-                                        let tag = detail.tag.join(",");
-                                        let mut tag_text = CJKText::raw([
-                                            ("标签: ", Style::default().fg(Color::Blue)),
-                                            (&tag, Style::default())
-                                        ].to_vec());
+                                let mut empty = CJKText::new("");
 
-                                        let mut empty = CJKText::new("");
+                                let mut comment_hint = CJKText::raw([
+                                    ("评论: ", Style::default().fg(Color::Blue)),
+                                ].to_vec());
+                                let mut comment = CJKText::new(&detail.comment);
 
-                                        let mut comment_hint = CJKText::raw([
-                                            ("评论: ", Style::default().fg(Color::Blue)),
-                                        ].to_vec());
-                                        let mut comment = CJKText::new(&detail.comment);
+                                scroll.push(&mut status_text);
+                                scroll.push(&mut score_text);
+                                scroll.push(&mut tag_text);
+                                scroll.push(&mut empty);
+                                scroll.push(&mut comment_hint);
+                                scroll.push(&mut comment);
 
-                                        scroll.push(&mut status_text);
-                                        scroll.push(&mut score_text);
-                                        scroll.push(&mut tag_text);
-                                        scroll.push(&mut empty);
-                                        scroll.push(&mut comment_hint);
-                                        scroll.push(&mut comment);
+                                scroll.set_bound(inner);
+                                scroll.render(&mut f, inner);
+                            } else {
+                                let mut status_text = CJKText::raw([
+                                    ("状态: ", Style::default().fg(Color::Blue)),
+                                    ("没打算", Style::default()),
+                                ].to_vec());
 
-                                        scroll.set_bound(inner);
-                                        scroll.render(&mut f, inner);
-                                    } else {
-                                        let mut status_text = CJKText::raw([
-                                            ("状态: ", Style::default().fg(Color::Blue)),
-                                            ("没打算", Style::default()),
-                                        ].to_vec());
+                                scroll.push(&mut status_text);
 
-                                        scroll.push(&mut status_text);
-
-                                        scroll.set_bound(inner);
-                                        scroll.render(&mut f, inner);
-                                    }
-
-                                    // TODO: intercept
-                                }
+                                scroll.set_bound(inner);
+                                scroll.render(&mut f, inner);
                             }
+
+                            // TODO: intercept
                         }
                     }
-                }
-                2 => {
-                    CJKText::new("还没写呢 ฅ^•ﻌ•^ฅ!").render(&mut f, chunks[1].padding_hoz(2));
                 }
                 _ => {}
             }

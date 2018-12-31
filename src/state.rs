@@ -332,6 +332,13 @@ impl Tab {
             _ => false,
         }
     }
+
+    pub fn subject_id(&self) -> Option<u64> {
+        match self {
+            Tab::Subject(r) => Some(*r),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -355,8 +362,8 @@ pub enum LongCommand {
     Command(String),
     Toggle,
 
-    EditRating(String),
-    EditStatus(CollectionStatus),
+    EditRating(u64, CollectionDetail, String),
+    EditStatus(u64, Option<CollectionDetail>, CollectionStatus),
 }
 
 impl LongCommand {
@@ -373,8 +380,8 @@ impl LongCommand {
             LongCommand::Tab => Some("g".to_string()),
             LongCommand::Command(ref inner) => Some(format!(":{}", inner)),
             LongCommand::Toggle => Some("t".to_string()),
-            LongCommand::EditRating(r) => Some(format!("评分 (1-10, 0=取消): {}", r)),
-            LongCommand::EditStatus(s) => Some(format!("状态: {} [Tab]", s.disp())),
+            LongCommand::EditRating(_, _, r) => Some(format!("评分 (1-10, 0=取消): {}", r)),
+            LongCommand::EditStatus(_, _, s) => Some(format!("状态: {} [Tab]", s.disp())),
         }
     }
 }
@@ -386,7 +393,6 @@ pub struct UIState {
     pub(crate) scroll: u16,
     pub(crate) focus: Option<usize>,
     pub(crate) focus_limit: usize,
-    pub(crate) editing: Option<u64>,
 
     pub(crate) pending: Option<PendingUIEvent>,
 
@@ -412,7 +418,6 @@ impl UIState {
             scroll: 0,
             focus: None,
             focus_limit: 0,
-            editing: None,
 
             pending: None,
 
@@ -448,6 +453,11 @@ impl UIState {
         }
 
         self.tab = tab;
+    }
+
+    pub fn open_tab(&mut self, tab: Tab) -> usize {
+        self.tabs.push(tab);
+        self.tabs.len() - 1
     }
 
     pub fn active_tab(&self) -> &Tab {
@@ -586,7 +596,7 @@ impl UIState {
                     }
                 }
 
-                LongCommand::EditRating(ref mut rating) => {
+                LongCommand::EditRating(id, ref coll, ref mut rating) => {
                     match ev {
                         UIEvent::Key(Key::Char('\n')) => {
                             if let Ok(mut digit) = rating.parse::<u8>() {
@@ -594,11 +604,10 @@ impl UIState {
                                     digit = 10;
                                 }
 
-                                if let FetchResult::Direct((id, Some(mut coll))) = app.fetch_collection_detail_weak() {
-                                    if Some(id) == self.editing {
-                                        coll.rating = digit;
-                                        app.update_collection_detail(id, coll.status.clone(), Some(coll));
-                                    }
+                                if coll.rating != digit {
+                                    let mut coll = coll.clone();
+                                    coll.rating = digit;
+                                    app.update_collection_detail(id, coll.status.clone(), Some(coll));
                                 }
                             }
 
@@ -625,19 +634,14 @@ impl UIState {
                     }
                 }
 
-                LongCommand::EditStatus(ref mut current) => {
+                LongCommand::EditStatus(id, ref coll, ref mut current) => {
                     match ev {
                         UIEvent::Key(Key::Char('\t')) => {
                             *current = current.rotate();
                             return self;
                         }
                         UIEvent::Key(Key::Char('\n')) => {
-                            // TODO: potential racing here.
-                            if let FetchResult::Direct((id, coll)) = app.fetch_collection_detail_weak() {
-                                if Some(id) == self.editing {
-                                    app.update_collection_detail(id, current.clone(), coll);
-                                }
-                            }
+                            app.update_collection_detail(id, current.clone(), coll.clone());
 
                             self.command = LongCommand::Absent;
                             return self;
@@ -715,29 +719,28 @@ impl UIState {
 
             UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
                 if let FetchResult::Direct((_, coll)) = app.fetch_collection_detail_weak() {
-                    let initial = if let Some(coll) = coll {
-                        coll.status
+                    let initial = if let Some(ref coll) = coll {
+                        coll.status.clone()
                     } else {
                         Default::default()
                     };
-                    self.command = LongCommand::EditStatus(initial);
+                    self.command = LongCommand::EditStatus(self.active_tab().subject_id().unwrap(), coll, initial);
                 }
             }
 
             UIEvent::Key(Key::Char('r')) if self.active_tab().is_subject() => {
                 if let FetchResult::Direct((_, Some(coll))) = app.fetch_collection_detail_weak() {
-                    self.command = LongCommand::EditRating(coll.rating.to_string());
+                    let rating = coll.rating.to_string();
+                    self.command = LongCommand::EditRating(self.active_tab().subject_id().unwrap(), coll, rating);
                 }
             }
 
             UIEvent::Key(Key::Char('c')) if self.active_tab().is_subject() => {
-                if let Some(id) = self.editing {
-                    if let FetchResult::Direct((_, Some(mut coll))) = app.fetch_collection_detail_weak() {
-                        if let Ok(Some(content)) = self.edit(&coll.comment) {
-                            if content != coll.comment {
-                                coll.comment = content;
-                                app.update_collection_detail(id, coll.status.clone(), Some(coll));
-                            }
+                if let FetchResult::Direct((_, Some(mut coll))) = app.fetch_collection_detail_weak() {
+                    if let Ok(Some(content)) = self.edit(&coll.comment) {
+                        if content != coll.comment {
+                            coll.comment = content;
+                            app.update_collection_detail(self.active_tab().subject_id().unwrap(), coll.status.clone(), Some(coll));
                         }
                     }
                 }
@@ -813,9 +816,15 @@ impl UIState {
         let collection = app.fetch_collection().into();
         let target = self.do_filter(&collection).skip(focus).next();
 
-        if let Some(t) = target {
-            self.editing = Some(t.subject.id);
-            self.tab = 1; // TODO: no hard coded magic numbers
+        if let Some(target) = target {
+            for (i, t) in self.tabs.iter().enumerate() {
+                if t == &Tab::Subject(target.subject.id) {
+                    self.tab = i;
+                    return;
+                }
+            }
+
+            self.tab = self.open_tab(Tab::Subject(target.subject.id));
         }
     }
 
