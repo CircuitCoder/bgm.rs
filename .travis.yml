@@ -9,8 +9,8 @@ rust:
 script:
 - cargo build --release --verbose
 - ls target/release
-- mv target/release/bgmtty target/release/bgmtty-$TRAVIS_OS_NAME && true
-- mv target/release/bgmtty.exe target/release/bgmtty-$TRAVIS_OS_NAME.exe && true
+- mv target/release/bgmtty target/release/bgmtty-$TRAVIS_OS_NAME || true
+- mv target/release/bgmtty.exe target/release/bgmtty-$TRAVIS_OS_NAME.exe || true
 deploy:
   provider: releases
   api_key:
