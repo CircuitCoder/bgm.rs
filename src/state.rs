@@ -1,4 +1,4 @@
-use bgmtv::client::{CollectionEntry, CollectionDetail, SubjectType, Client};
+use bgmtv::client::{CollectionEntry, CollectionDetail, SubjectType, SubjectSmall, Client};
 use crossbeam_channel::{Sender};
 use std::sync::{Arc, Mutex};
 use futures::future::Future;
@@ -18,6 +18,14 @@ impl<T> FetchResult<T> {
                 FetchResult::Direct(u) => FetchResult::Direct((t, u)),
             }
         }
+    }
+}
+
+impl<T, U> std::ops::Add<FetchResult<U>> for FetchResult<T> {
+    type Output = FetchResult<(T, U)>;
+
+    fn add(self, other: FetchResult<U>) -> FetchResult<(T, U)> {
+        self.join(other)
     }
 }
 
@@ -42,6 +50,7 @@ struct AppStateInner {
 
     collections: InnerState<(), Vec<CollectionEntry>>,
     collection_detail: InnerState<u64, Option<CollectionDetail>>,
+    subject: InnerState<u64, SubjectSmall>,
 
     messages: Vec<String>,
 }
@@ -65,6 +74,7 @@ impl AppState {
                 notifier,
                 collections: InnerState::Discarded,
                 collection_detail: InnerState::Discarded,
+                subject: InnerState::Discarded,
                 messages: ["Loading bgmTTY...".to_string()].to_vec(),
             })),
 
@@ -170,6 +180,49 @@ impl AppState {
                     InnerState::Fetching(fetching) if fetching == id => {
                         inner.collection_detail = InnerState::Fetched(id, resp);
                         inner.messages.push("收藏加载完成！".to_string());
+                        inner
+                            .notifier
+                            .send(())
+                            .expect("Unable to notify the main thread");
+                    }
+                    _ => {}
+                }
+            })
+            .map_err(|e| println!("{}", e));
+
+        self.rt.spawn(fut);
+
+        FetchResult::Deferred
+    }
+
+    pub fn fetch_subject(&mut self, id: u64) -> FetchResult<SubjectSmall> {
+        let mut guard = self.inner.lock().unwrap();
+        match guard.subject {
+            InnerState::Fetched(fetched, ref result) if id == fetched =>
+                return FetchResult::Direct(result.clone()),
+            InnerState::Fetching(fetching) if id == fetching =>
+                return FetchResult::Deferred,
+            _ => {
+                // Else: discarded or fetching another, restart fetch
+                guard.subject = InnerState::Fetching(id);
+            }
+        }
+
+        guard.messages.push(format!("获取条目中: {}...", id));
+        guard.notifier.send(()).unwrap();
+        drop(guard);
+
+        let fut = self.client.subject(id);
+        let handle = self.inner.clone();
+
+        let fut = fut
+            .map(move |resp| {
+                let mut inner = handle.lock().unwrap();
+
+                match inner.subject {
+                    InnerState::Fetching(fetching) if fetching == id => {
+                        inner.subject = InnerState::Fetched(id, resp);
+                        inner.messages.push("条目加载完成！".to_string());
                         inner
                             .notifier
                             .send(())

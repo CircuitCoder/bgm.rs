@@ -200,6 +200,22 @@ impl Client {
         .map_err(|e| e.into())
     }
 
+    pub fn subject(
+        &self,
+        id: u64,
+    ) -> impl Future<Item = SubjectSmall, Error = failure::Error> {
+        let c = req::Client::new();
+        c.get(&format!(
+            "{}/subject/{}",
+            API_ROOT!(),
+            id
+        ))
+        .apply_auth(self)
+        .send()
+        .and_then(|mut resp| resp.json())
+        .map_err(|e| e.into())
+    }
+
     pub fn progress(&self, coll: &CollectionEntry, ep: Option<u64>, vol: Option<u64>) -> impl Future<Item = (), Error = failure::Error> {
         let ep = ep.unwrap_or(coll.ep_status);
         let vol = vol.unwrap_or(coll.vol_status);
