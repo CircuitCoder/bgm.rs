@@ -356,7 +356,7 @@ pub struct UIState {
 
     stdin_lock: Arc<Mutex<()>>,
     last_click_interval: Option<Duration>,
-    last_click: Option<Instant>,
+    last_click: Option<(u16, u16, Instant)>,
 }
 
 impl UIState {
@@ -701,7 +701,7 @@ impl UIState {
             UIEvent::Mouse(m) => match m {
                 MouseEvent::Press(btn, x, y) => {
                     self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn));
-                    self.update_click();
+                    self.update_click(x, y);
                 }
                 MouseEvent::Hold(x, y) => {
                     self.pending = Some(PendingUIEvent::Click(
@@ -743,13 +743,16 @@ impl UIState {
         self.focus = f;
     }
 
-    fn update_click(&mut self) {
+    fn update_click(&mut self, x: u16, y: u16) {
         let now = Instant::now();
-        if let Some(i) = self.last_click {
-            self.last_click_interval = Some(now - i);
-            eprintln!("{:?}", self.last_click_interval);
+        if let Some((ox, oy, i)) = self.last_click {
+            if ox == x && oy == y {
+                self.last_click_interval = Some(now - i);
+            } else {
+                self.last_click_interval = None;
+            }
         }
-        self.last_click = Some(now);
+        self.last_click = Some((x, y, now));
     }
 
     pub fn is_double_click(&self) -> bool {
