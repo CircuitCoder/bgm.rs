@@ -82,10 +82,47 @@ impl CollectionEntry {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum CollectionStatus {
+    #[serde(rename = "wish")]
+    Wished,
+
+    #[serde(rename = "collect")]
+    Done,
+
+    #[serde(rename = "do")]
+    Doing,
+
+    #[serde(rename = "on_hold")]
+    OnHold,
+
+    #[serde(rename = "dropped")]
+    Dropped,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CollectionDetail {
+    pub status: CollectionStatus,
+    pub rating: u8,
+    pub comment: String,
+    pub tag: Vec<String>,
+}
+
 #[derive(Serialize)]
 struct ProgressPayload {
     watched_eps: String,
     watched_vols: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum APIResp<T> {
+    Error {
+        code: u16,
+        error: String,
+    },
+    Success(T),
 }
 
 pub struct Client {
@@ -138,6 +175,28 @@ impl Client {
         .apply_auth(self)
         .send()
         .and_then(|mut resp| resp.json())
+        .map_err(|e| e.into())
+    }
+
+    pub fn collection_detail(
+        &self,
+        id: u64,
+    ) -> impl Future<Item = Option<CollectionDetail>, Error = failure::Error> {
+        let c = req::Client::new();
+        c.get(&format!(
+            "{}/collection/{}",
+            API_ROOT!(),
+            id
+        ))
+        .apply_auth(self)
+        .send()
+        .and_then(|mut resp| resp.json())
+        .map(|resp: APIResp<CollectionDetail>| {
+            match resp {
+                APIResp::Error{ .. } => None, // TODO: handle other errors
+                APIResp::Success(payload) => Some(payload),
+            }
+        })
         .map_err(|e| e.into())
     }
 

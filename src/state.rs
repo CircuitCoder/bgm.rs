@@ -1,4 +1,4 @@
-use bgmtv::client::{CollectionEntry, SubjectType, Client};
+use bgmtv::client::{CollectionEntry, CollectionDetail, SubjectType, Client};
 use crossbeam_channel::{Sender};
 use std::sync::{Arc, Mutex};
 use futures::future::Future;
@@ -9,9 +9,22 @@ pub enum FetchResult<T> {
     Deferred,
 }
 
-pub enum InnerState<T> {
-    Fetching,
-    Fetched(T),
+impl<T> FetchResult<T> {
+    pub fn join<U>(self, another: FetchResult<U>) -> FetchResult<(T, U)> {
+        match self {
+            FetchResult::Deferred => FetchResult::Deferred,
+            FetchResult::Direct(t) => match another {
+                FetchResult::Deferred => FetchResult::Deferred,
+                FetchResult::Direct(u) => FetchResult::Direct((t, u)),
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Clone)]
+pub enum InnerState<I, T> {
+    Fetching(I),
+    Fetched(I, T),
     Discarded,
 }
 
@@ -27,7 +40,8 @@ impl<T> Into<Option<T>> for FetchResult<T> {
 struct AppStateInner {
     notifier: Sender<()>,
 
-    collections: InnerState<Vec<CollectionEntry>>,
+    collections: InnerState<(), Vec<CollectionEntry>>,
+    collection_detail: InnerState<u64, Option<CollectionDetail>>,
 
     messages: Vec<String>,
 }
@@ -49,7 +63,8 @@ impl AppState {
 
             inner: Arc::new(Mutex::new(AppStateInner {
                 notifier,
-                collections: InnerState::Fetching,
+                collections: InnerState::Discarded,
+                collection_detail: InnerState::Discarded,
                 messages: ["Loading bgmTTY...".to_string()].to_vec(),
             })),
 
@@ -63,13 +78,13 @@ impl AppState {
         let mut guard = self.inner.lock().unwrap();
         if self.fetching_collection {
             match guard.collections {
-                InnerState::Fetched(ref entries) =>
+                InnerState::Fetched(_, ref entries) =>
                     return FetchResult::Direct(entries.clone()),
-                InnerState::Fetching =>
+                InnerState::Fetching(_) =>
                     return FetchResult::Deferred,
                 _ => {
                     // Else: discarded, restart fetch
-                    guard.collections = InnerState::Fetching;
+                    guard.collections = InnerState::Fetching(());
                 }
             }
         }
@@ -86,7 +101,7 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                inner.collections = InnerState::Fetched(resp);
+                inner.collections = InnerState::Fetched((), resp);
                 inner.messages.push("收藏加载完成！".to_string());
                 inner
                     .notifier
@@ -126,9 +141,52 @@ impl AppState {
         let msgs = &self.inner.lock().unwrap().messages;
         msgs[msgs.len()-1].clone()
     }
+
+    pub fn fetch_collection_detail(&mut self, id: u64) -> FetchResult<Option<CollectionDetail>> {
+        let mut guard = self.inner.lock().unwrap();
+        match guard.collection_detail {
+            InnerState::Fetched(fetched, ref result) if id == fetched =>
+                return FetchResult::Direct(result.clone()),
+            InnerState::Fetching(fetching) if id == fetching =>
+                return FetchResult::Deferred,
+            _ => {
+                // Else: discarded or fetching another, restart fetch
+                guard.collection_detail = InnerState::Fetching(id);
+            }
+        }
+
+        guard.messages.push("获取收藏状态...".to_string());
+        guard.notifier.send(()).unwrap();
+        drop(guard);
+
+        let fut = self.client.collection_detail(id);
+        let handle = self.inner.clone();
+
+        let fut = fut
+            .map(move |resp| {
+                let mut inner = handle.lock().unwrap();
+
+                match inner.collection_detail {
+                    InnerState::Fetching(fetching) if fetching == id => {
+                        inner.collection_detail = InnerState::Fetched(id, resp);
+                        inner.messages.push("收藏加载完成！".to_string());
+                        inner
+                            .notifier
+                            .send(())
+                            .expect("Unable to notify the main thread");
+                    }
+                    _ => {}
+                }
+            })
+            .map_err(|e| println!("{}", e));
+
+        self.rt.spawn(fut);
+
+        FetchResult::Deferred
+    }
 }
 
-pub const TABS: [&str; 2] = ["格子", "搜索"];
+pub const TABS: [&str; 3] = ["格子", "条目", "搜索"];
 pub const SELECTS: [(&str, SubjectType); 3] = [
     ("动画骗", SubjectType::Anime),
     ("小书本", SubjectType::Book),
@@ -173,6 +231,7 @@ pub struct UIState {
     pub(crate) scroll: u16,
     pub(crate) focus: Option<usize>,
     pub(crate) focus_limit: usize,
+    pub(crate) editing: Option<u64>,
 
     pub(crate) pending: Option<PendingUIEvent>,
 
@@ -190,6 +249,7 @@ impl Default for UIState {
             scroll: 0,
             focus: None,
             focus_limit: 0,
+            editing: None,
 
             pending: None,
 
@@ -414,6 +474,16 @@ impl UIState {
                     };
 
                     app.update_progress(t, ep, vol);
+                }
+            }
+            UIEvent::Key(Key::Char('e')) if self.focus.is_some() => {
+                let focus = self.focus.unwrap();
+                let collection = app.fetch_collection().into();
+                let target = self.do_filter(&collection).skip(focus).next();
+
+                if let Some(t) = target {
+                    self.editing = Some(t.subject.id);
+                    self.tab = 1; // TODO: no hard coded magic numbers
                 }
             }
             UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
