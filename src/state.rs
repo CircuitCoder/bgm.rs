@@ -153,6 +153,7 @@ pub enum LongCommand {
     Absent,
     Tab,
     Command(String),
+    Toggle,
 }
 
 impl LongCommand {
@@ -161,6 +162,7 @@ impl LongCommand {
             LongCommand::Absent => None,
             LongCommand::Tab => Some("g".to_string()),
             LongCommand::Command(ref inner) => Some(format!(":{}", inner)),
+            LongCommand::Toggle => Some("t".to_string()),
         }
     }
 }
@@ -335,6 +337,25 @@ impl UIState {
                     }
                 }
 
+                LongCommand::Toggle => {
+                    match ev {
+                        UIEvent::Key(Key::Char(i @ '1'...'9')) => {
+                            let i = i.to_digit(10).unwrap();
+                            if let Some(filter) = self.filters.get_mut(i as usize - 1) {
+                                *filter = !*filter;
+                            }
+
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(_) => {
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        _ => {}
+                    }
+                }
+
                 _ => {}
             }
         }
@@ -364,6 +385,9 @@ impl UIState {
                         }
                     }
                 }
+            UIEvent::Key(Key::Char('t')) if self.tab == 0 => {
+                self.command = LongCommand::Toggle;
+            }
             UIEvent::Key(Key::Char('+')) if self.focus.is_some() => {
                 let focus = self.focus.unwrap();
                 let collection = app.fetch_collection().into();

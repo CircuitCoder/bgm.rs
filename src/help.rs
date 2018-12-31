@@ -32,7 +32,7 @@ impl<'a> Into<CJKText<'static>> for &'a HelpEntry {
     }
 }
 
-pub const HELP_DATABASE: [HelpEntry; 10] = [
+pub const HELP_DATABASE: [HelpEntry; 11] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
     HelpEntry(&[":q", "C-q"], "Rage quit", &|_| true),
@@ -45,6 +45,7 @@ pub const HELP_DATABASE: [HelpEntry; 10] = [
     HelpEntry(&["k", "Up"], "选择上一个", &|ui| ui.tab == 0 && ui.focus.is_some()),
     HelpEntry(&["j", "Down"], "选择下一个", &|ui| ui.tab == 0 && ui.focus.is_some()),
     HelpEntry(&["j", "Down"], "选择第一个", &|ui| ui.tab == 0 && ui.focus.is_none()),
+    HelpEntry(&["t<i>"], "切换第 i 个过滤选项", &|ui| ui.tab == 0),
 
     // When have focus
     HelpEntry(&["+"], "增加进度", &|ui| ui.tab == 0 && ui.focus.is_some()),
