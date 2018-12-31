@@ -1,0 +1,10 @@
+os:
+  - windows
+  - linux
+  - osx
+
+language: rust
+rust:
+  - nightly
+script:
+  - cargo build --release --verbose

@@ -1,6 +1,4 @@
 #![feature(const_slice_len)]
-#![feature(arbitrary_self_types)]
-#![feature(fnbox)]
 
 mod widgets;
 mod state;
