@@ -5,6 +5,7 @@ use futures::future::Future;
 use crate::CollectionStatusExt;
 use std::io::{Read, Write};
 use std::ops::Deref;
+use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 pub enum FetchResult<T> {
@@ -354,6 +355,8 @@ pub struct UIState {
     pub(crate) command: LongCommand,
 
     stdin_lock: Arc<Mutex<()>>,
+    last_click_interval: Option<Duration>,
+    last_click: Option<Instant>,
 }
 
 impl UIState {
@@ -374,6 +377,8 @@ impl UIState {
             command: LongCommand::Absent,
 
             stdin_lock,
+            last_click_interval: None,
+            last_click: None,
         }
     }
 
@@ -656,16 +661,7 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('\n')) if self.focus.is_some() => {
-                let focus = self.focus.unwrap();
-                let collection = app.fetch_collection().into();
-                let target = self.do_filter(&collection).skip(focus).next();
-
-                if let Some(t) = target {
-                    self.editing = Some(t.subject.id);
-                    self.tab = 1; // TODO: no hard coded magic numbers
-                }
-            }
+            UIEvent::Key(Key::Char('\n')) if self.focus.is_some() => self.goto_detail(self.focus.unwrap(), app),
             UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
 
             UIEvent::Key(Key::Char('s')) if self.tab == 1 => {
@@ -704,14 +700,17 @@ impl UIState {
             UIEvent::Key(Key::Char('?')) | UIEvent::Key(Key::Char('h')) => self.help = !self.help,
             UIEvent::Mouse(m) => match m {
                 MouseEvent::Press(btn, x, y) => {
-                    self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn))
+                    self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn));
+                    self.update_click();
                 }
                 MouseEvent::Hold(x, y) => {
                     self.pending = Some(PendingUIEvent::Click(
                         x - 1,
                         y - 1,
                         termion::event::MouseButton::Left,
-                    ))
+                    ));
+                    self.last_click_interval = None;
+                    self.last_click = None;
                 }
                 _ => {}
             },
@@ -742,6 +741,30 @@ impl UIState {
 
     pub fn set_focus(&mut self, f: Option<usize>) {
         self.focus = f;
+    }
+
+    fn update_click(&mut self) {
+        let now = Instant::now();
+        if let Some(i) = self.last_click {
+            self.last_click_interval = Some(now - i);
+            eprintln!("{:?}", self.last_click_interval);
+        }
+        self.last_click = Some(now);
+    }
+
+    pub fn is_double_click(&self) -> bool {
+        self.last_click_interval.is_some()
+            && self.last_click_interval.unwrap() < Duration::from_millis(300)
+    }
+
+    pub fn goto_detail(&mut self, focus: usize, app: &mut AppState) {
+        let collection = app.fetch_collection().into();
+        let target = self.do_filter(&collection).skip(focus).next();
+
+        if let Some(t) = target {
+            self.editing = Some(t.subject.id);
+            self.tab = 1; // TODO: no hard coded magic numbers
+        }
     }
 
     /**

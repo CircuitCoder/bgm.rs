@@ -522,7 +522,11 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y, btn)
                                     {
                                         Some(ViewingEntryEvent::Click) => {
-                                            ui.set_focus(Some(i));
+                                            if ui.focus == Some(i) && ui.is_double_click() {
+                                                ui.goto_detail(i, &mut app);
+                                            } else {
+                                                ui.set_focus(Some(i));
+                                            }
                                         }
                                         _ => {}
                                     },
@@ -548,7 +552,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     match ui.editing {
                         None => {
-                            CJKText::new("在格子或搜索 Tab 中选中一个条目后，按 Enter 可查看细节").render(&mut f, inner);
+                            CJKText::new("在格子或搜索 Tab 中选中一个条目按 Enter，或双击查看细节").render(&mut f, inner);
                         }
                         Some(editing) => {
                             use tui::style::*;
@@ -694,8 +698,6 @@ fn kickoff_listener(tx: Sender<UIEvent>, stdin_lock: Arc<Mutex<()>>) {
                     && last_backoff.unwrap() + control_sequence_backoff > std::time::Instant::now() {
                     continue;
                 }
-
-                eprintln!("{:?}", ev);
 
                 let result = match ev {
                     Event::Key(key) => tx.send(UIEvent::Key(key)),
