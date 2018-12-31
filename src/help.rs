@@ -50,7 +50,7 @@ pub const HELP_DATABASE: [HelpEntry; 17] = [
     // When have focus
     HelpEntry(&["+"], "增加进度", &|ui| ui.tab == 0 && ui.focus.is_some()),
     HelpEntry(&["-"], "减少进度", &|ui| ui.tab == 0 && ui.focus.is_some()),
-    HelpEntry(&["e"], "详情/编辑", &|ui| ui.tab == 0 && ui.focus.is_some()),
+    HelpEntry(&["Enter"], "详情/编辑", &|ui| ui.tab == 0 && ui.focus.is_some()),
     HelpEntry(&["Esc"], "取消选择", &|ui| ui.tab == 0 && ui.focus.is_some()),
 
     // When in subject page

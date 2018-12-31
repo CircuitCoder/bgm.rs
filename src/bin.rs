@@ -548,7 +548,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     match ui.editing {
                         None => {
-                            CJKText::new("在格子或搜索 Tab 中选中一个条目后，按 e 可查看细节").render(&mut f, inner);
+                            CJKText::new("在格子或搜索 Tab 中选中一个条目后，按 Enter 可查看细节").render(&mut f, inner);
                         }
                         Some(editing) => {
                             use tui::style::*;

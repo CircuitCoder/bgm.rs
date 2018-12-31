@@ -656,7 +656,7 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('e')) if self.focus.is_some() => {
+            UIEvent::Key(Key::Char('\n')) if self.focus.is_some() => {
                 let focus = self.focus.unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
