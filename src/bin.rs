@@ -42,13 +42,13 @@ fn load_settings() -> Result<Settings, Error> {
 fn init_credentials() {
     println!(
         "{}",
-        "bgmTTY runs as a OAuth client of bgm.tv. Hence we require a valid app credential."
+        "bgmTTY 通过 OAuth 协议向 bgm.tv 申请验证，所以我们需要有效的 OAuth 应用凭证。"
             .blue()
             .bold()
     );
     println!(
         "{}",
-        "You may create a new app at https://bgm.tv/dev/app, or use pre-existing ones."
+        "您可以前往 https://bgm.tv/dev/app 进行申请, 或者使用既有的凭证。"
             .blue()
             .bold()
     );
@@ -57,12 +57,12 @@ fn init_credentials() {
     let lock = stdin.lock();
 
     let mut lines = lock.lines();
-    print!("Please input your client ID: ");
+    print!("请输入您的 Client ID: ");
     std::io::stdout()
         .flush()
         .expect("Could not flush stdout???");
     let id = lines.next();
-    print!("Please input your client secret: ");
+    print!("请输入您的 Client secret");
     std::io::stdout()
         .flush()
         .expect("Could not flush stdout???");
@@ -91,7 +91,7 @@ fn init_credentials() {
 
     print!(
         "{}",
-        "Done! Now you can run bgmTTY again without the --init flag to perform a OAuth login."
+        "完成了！现在您可以去掉 --init 参数重新启动 bgmTTY，进行 OAuth 认证。"
             .green()
             .bold()
     )
@@ -103,7 +103,6 @@ fn new_auth(settings: Settings) -> Result<Settings, ()> {
     let fut = request_code(cred.get_client_id())
         .map_err(|e| println!("{:#?}", e))
         .and_then(|(code, redirect)| {
-            println!("Code: {}, redirect: {}", code, redirect);
             request_token(cred, code, redirect.clone())
                 .map_err(|e| println!("{}", e))
                 .map(|resp| (resp, redirect))
@@ -119,7 +118,7 @@ fn new_auth(settings: Settings) -> Result<Settings, ()> {
             _ => {
                 println!(
                     "{}",
-                    &"Refresh failed! Please check your OAuth credentials and try again."
+                    &"获取 Token 失败！请检查您的 Client ID/secret 并重试。"
                         .red()
                         .bold()
                 );
@@ -151,7 +150,7 @@ fn refresh_auth(settings: Settings) -> Result<Settings, ()> {
             _ => {
                 println!(
                     "{}",
-                    &"Refresh failed! Please check your OAuth credentials and try again."
+                    &"刷新 Token 失败！请检查您的 Client ID/secret 并重试。"
                         .red()
                         .bold()
                 );
@@ -170,22 +169,22 @@ fn main() {
         .arg(
             clap::Arg::with_name("init")
                 .long("init")
-                .help("(Re)initialize OAuth credentials"),
+                .help("(重新)初始化 OAuth 应用凭证"),
         )
         .arg(
             clap::Arg::with_name("refresh")
                 .long("refresh")
-                .help("Force refresh OAuth tokens"),
+                .help("强制刷新 OAuth Token"),
         )
         .arg(
             clap::Arg::with_name("logout")
                 .long("logout")
-                .help("Logout your previous account and exit immediately."),
+                .help("登出账户并立即退出"),
         )
         .arg(
             clap::Arg::with_name("auth-only")
                 .long("auth-only")
-                .help("Only perform one auth operation and exit immediately, that is, refresh or login"),
+                .help("仅进行认证或刷新 Token"),
         )
         .get_matches();
 

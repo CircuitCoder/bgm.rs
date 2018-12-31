@@ -76,6 +76,7 @@ impl AppState {
 
         self.fetching_collection = true;
         guard.messages.push("刷新收藏中...".to_string());
+        guard.notifier.send(()).unwrap();
         drop(guard);
 
         let fut = self.client.collection(None);
