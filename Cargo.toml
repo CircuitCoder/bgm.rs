@@ -18,7 +18,7 @@ dirs = "1.0.4"
 colored = "1.6.1"
 clap = "2.32.0"
 serde_yaml = "0.8.8"
-termion = "1.5.1"
+termion = { git = "https://gitlab.redox-os.org/Jezza/termion", branch = "windows-support" }
 tui = "0.3.0"
 crossbeam-channel = "0.3.4"
 unicode-segmentation = "1.1.0"
