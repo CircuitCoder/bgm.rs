@@ -3,6 +3,8 @@ use crossbeam_channel::{Sender};
 use std::sync::{Arc, Mutex};
 use futures::future::Future;
 use crate::CollectionStatusExt;
+use std::io::{Read, Write};
+use std::ops::Deref;
 
 #[derive(Clone)]
 pub enum FetchResult<T> {
@@ -146,6 +148,11 @@ impl AppState {
             })
             .map_err(|e| println!("{}", e));
         self.rt.spawn(fut);
+    }
+
+    pub fn publish_message(&mut self, msg: String) {
+        let msgs = &mut self.inner.lock().unwrap().messages;
+        msgs.push(msg);
     }
 
     pub fn last_message(&self) -> String {
@@ -298,6 +305,7 @@ pub enum PendingUIEvent {
     Click(u16, u16, termion::event::MouseButton),
     ScrollIntoView(usize),
     Quit,
+    Reset,
 }
 
 #[derive(Clone)]
@@ -344,10 +352,12 @@ pub struct UIState {
     pub(crate) help: bool,
 
     pub(crate) command: LongCommand,
+
+    stdin_lock: Arc<Mutex<()>>,
 }
 
-impl Default for UIState {
-    fn default() -> UIState {
+impl UIState {
+    pub fn with(stdin_lock: Arc<Mutex<()>>) -> UIState {
         UIState {
             tab: 0,
             filters: [true; SELECTS.len()],
@@ -362,11 +372,11 @@ impl Default for UIState {
             help: false,
 
             command: LongCommand::Absent,
+
+            stdin_lock,
         }
     }
-}
 
-impl UIState {
     pub fn rotate_tab(&mut self) {
         if self.tab != TABS.len() - 1 {
             self.tab += 1;
@@ -481,7 +491,7 @@ impl UIState {
                             match cmd as &str {
                                 "q" => self.pending = Some(PendingUIEvent::Quit),
                                 "help" => self.help = !self.help,
-                                _ => {},
+                                _ => app.publish_message("是不认识的命令!".to_string()),
                             }
 
                             self.command = LongCommand::Absent;
@@ -675,6 +685,19 @@ impl UIState {
                 }
             }
 
+            UIEvent::Key(Key::Char('c')) if self.tab == 1 => {
+                if let Some(id) = self.editing {
+                    if let FetchResult::Direct((_, Some(mut coll))) = app.fetch_collection_detail_weak() {
+                        if let Ok(Some(content)) = self.edit(&coll.comment) {
+                            if content != coll.comment {
+                                coll.comment = content;
+                                app.update_collection_detail(id, coll.status.clone(), Some(coll));
+                            }
+                        }
+                    }
+                }
+            }
+
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,
             UIEvent::Key(Key::Char(':')) => self.command = LongCommand::Command(String::new()),
@@ -719,5 +742,32 @@ impl UIState {
 
     pub fn set_focus(&mut self, f: Option<usize>) {
         self.focus = f;
+    }
+
+    /**
+     * This method is intended to be called in the reducer.
+     * Since the reducer runs in the main (UI) thread,
+     * this will effectively blocks the rendering, so bgmTTY won't interfere with
+     * whatever editor the user uses
+     */
+    pub fn edit(&mut self, content: &str) -> std::io::Result<Option<String>>  {
+        self.pending = Some(PendingUIEvent::Reset);
+
+        let mut temp = tempfile::NamedTempFile::new()?;
+        write!(temp, "{}", content)?;
+        let path = temp.into_temp_path();
+
+        let status = {
+            let _guard = self.stdin_lock.lock().unwrap();
+            std::process::Command::new("vim").arg(path.deref()).status()?
+        };
+
+        if status.success() {
+            let mut content = String::new();
+            std::fs::File::open(path.deref())?.read_to_string(&mut content)?;
+            Ok(Some(content))
+        } else {
+            Ok(None)
+        }
     }
 }

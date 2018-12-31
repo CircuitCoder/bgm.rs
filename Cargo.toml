@@ -25,6 +25,7 @@ unicode-segmentation = "1.1.0"
 unicode-width = "0.1.5"
 itertools = "0.8.0"
 serde_json = "1.0.33"
+tempfile = "3.0.5"
 
 [[bin]]
 name = "bgmtty"

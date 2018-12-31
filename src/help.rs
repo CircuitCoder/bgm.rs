@@ -32,7 +32,7 @@ impl<'a> Into<CJKText<'static>> for &'a HelpEntry {
     }
 }
 
-pub const HELP_DATABASE: [HelpEntry; 15] = [
+pub const HELP_DATABASE: [HelpEntry; 17] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
     HelpEntry(&[":q", "C-q"], "Rage quit", &|_| true),
@@ -56,6 +56,8 @@ pub const HELP_DATABASE: [HelpEntry; 15] = [
     // When in subject page
     HelpEntry(&["s"], "修改收藏状态", &|ui| ui.tab == 1),
     HelpEntry(&["r"], "修改评分", &|ui| ui.tab == 1),
+    HelpEntry(&["t"], "修改标签", &|ui| ui.tab == 1),
+    HelpEntry(&["c"], "修改评论", &|ui| ui.tab == 1),
 
     // Long command
     HelpEntry(&["Esc"], "取消命令", &|ui| ui.command.present()),

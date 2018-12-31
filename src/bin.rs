@@ -25,6 +25,7 @@ use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
+use std::sync::{Arc, Mutex};
 
 fn default_path() -> impl AsRef<Path> {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
@@ -329,16 +330,28 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let (apptx, apprx) = unbounded();
     let (evtx, evrx) = unbounded();
 
-    kickoff_listener(evtx);
+    let stdin_lock = Arc::new(Mutex::new(()));
+
+    kickoff_listener(evtx, stdin_lock.clone());
 
     let mut app = AppState::create(apptx, client);
-    let mut ui = UIState::default();
+    let mut ui = UIState::with(stdin_lock);
 
-    'main: loop {
+    loop {
         // Process Splits
 
         use tui::layout::*;
         use tui::widgets::*;
+
+        if ui.pending == Some(PendingUIEvent::Quit) {
+            break;
+        }
+
+        if ui.pending == Some(PendingUIEvent::Reset) {
+            terminal.clear()?;
+            terminal.hide_cursor()?;
+            terminal.resize(cursize)?; // Clears buffer
+        }
 
         terminal.draw(|mut f| {
             let pending = ui.pending.clone();
@@ -641,9 +654,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 if index == 0 {
                     let event = oper.recv(&evrx).unwrap();
                     ui.reduce(event, &mut app);
-                    if ui.pending == Some(PendingUIEvent::Quit) {
-                        break 'main;
-                    }
                 } else {
                     oper.recv(&apprx).unwrap();
                 }
@@ -666,7 +676,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn kickoff_listener(tx: Sender<UIEvent>) {
+
+fn kickoff_listener(tx: Sender<UIEvent>, stdin_lock: Arc<Mutex<()>>) {
     use std::io;
     use std::thread;
     use termion::event::Event;
@@ -674,18 +685,32 @@ fn kickoff_listener(tx: Sender<UIEvent>) {
 
     thread::spawn(move || {
         let stdin = io::stdin();
+        let control_sequence_backoff = std::time::Duration::new(0, 5000000);
+        let mut last_backoff = None;
+
         for ev in stdin.events() {
             if let Ok(ev) = ev {
+                if last_backoff.is_some()
+                    && last_backoff.unwrap() + control_sequence_backoff > std::time::Instant::now() {
+                    continue;
+                }
+
+                eprintln!("{:?}", ev);
+
                 let result = match ev {
                     Event::Key(key) => tx.send(UIEvent::Key(key)),
                     Event::Mouse(mouse) => tx.send(UIEvent::Mouse(mouse)),
-                    _ => Ok(()),
+                    Event::Unsupported(_) => {
+                        last_backoff = Some(std::time::Instant::now());
+                        Ok(())
+                    }
                 };
 
                 if let Err(e) = result {
                     println!("{}", e);
                 }
             }
+            { let _guard = stdin_lock.lock().unwrap(); }
         }
     });
 }
