@@ -32,10 +32,14 @@ impl<'a> Into<CJKText<'static>> for &'a HelpEntry {
     }
 }
 
-pub const HELP_DATABASE: [HelpEntry; 8] = [
+pub const HELP_DATABASE: [HelpEntry; 10] = [
     // General
-    HelpEntry(&["?", "h"], "康帮助", &|_| true),
-    HelpEntry(&["q"], "Rage quit", &|_| true),
+    HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
+    HelpEntry(&[":q", "C-q"], "Rage quit", &|_| true),
+
+    // Tabs
+    HelpEntry(&["gt", "Tab"], "下一个 Tab", &|_| true),
+    HelpEntry(&["gT"], "上一个 Tab", &|_| true),
 
     // On primary tab
     HelpEntry(&["k", "Up"], "选择上一个", &|ui| ui.tab == 0 && ui.focus.is_some()),

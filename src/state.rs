@@ -134,15 +134,34 @@ pub const SELECTS: [(&str, SubjectType); 3] = [
     ("三刺螈", SubjectType::Real),
 ];
 
+#[derive(Clone, PartialEq)]
 pub enum UIEvent {
     Key(termion::event::Key),
     Mouse(termion::event::MouseEvent),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum PendingUIEvent {
     Click(u16, u16, termion::event::MouseButton),
     ScrollIntoView(usize),
+    Quit,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum LongCommand {
+    Absent,
+    Tab,
+    Command(String),
+}
+
+impl LongCommand {
+    pub fn prompt(&self) -> Option<String> {
+        match self {
+            LongCommand::Absent => None,
+            LongCommand::Tab => Some("g".to_string()),
+            LongCommand::Command(ref inner) => Some(format!(":{}", inner)),
+        }
+    }
 }
 
 pub struct UIState {
@@ -155,6 +174,8 @@ pub struct UIState {
     pub(crate) pending: Option<PendingUIEvent>,
 
     pub(crate) help: bool,
+
+    pub(crate) command: LongCommand,
 }
 
 impl Default for UIState {
@@ -170,6 +191,8 @@ impl Default for UIState {
             pending: None,
 
             help: false,
+
+            command: LongCommand::Absent,
         }
     }
 }
@@ -180,6 +203,14 @@ impl UIState {
             self.tab += 1;
         } else {
             self.tab = 0;
+        }
+    }
+
+    pub fn rotate_tab_rev(&mut self) {
+        if self.tab != 0 {
+            self.tab -= 1;
+        } else {
+            self.tab = TABS.len() - 1;
         }
     }
 
@@ -248,7 +279,70 @@ impl UIState {
     pub fn reduce(&mut self, ev: UIEvent, app: &mut AppState) -> &mut Self {
         use termion::event::{Key, MouseEvent};
 
+        if LongCommand::Absent != self.command {
+            if ev == UIEvent::Key(Key::Esc) {
+                self.command = LongCommand::Absent;
+                return self;
+            }
+
+            match self.command {
+                LongCommand::Tab => {
+                    match ev {
+                        UIEvent::Key(Key::Char('t')) => {
+                            self.rotate_tab();
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(Key::Char('T')) => {
+                            self.rotate_tab_rev();
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(_) => {
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        _ => {}
+                    }
+                }
+
+                LongCommand::Command(ref mut cmd) => {
+                    match ev {
+                        UIEvent::Key(Key::Char('\n')) => {
+                            match cmd as &str {
+                                "q" => self.pending = Some(PendingUIEvent::Quit),
+                                "help" => self.help = !self.help,
+                                _ => {},
+                            }
+
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(Key::Backspace) => {
+                            if cmd.pop().is_none() {
+                                self.command = LongCommand::Absent;
+                            }
+
+                            return self;
+                        }
+                        UIEvent::Key(Key::Char(c)) => {
+                            cmd.push(c);
+                            return self
+                        }
+                        UIEvent::Key(_) => return self,
+                        _ => {}
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        // No long command transfer possible, proceed to normal dispatch
+
         match ev {
+            UIEvent::Key(Key::Ctrl('q')) => self.pending = Some(PendingUIEvent::Quit),
+
             UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.tab == 0 => match self.focus {
                     None => {
                         self.focus = Some(0);
@@ -297,16 +391,11 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Esc) if self.focus.is_some() => {
-                self.focus = None;
-            }
-            UIEvent::Key(Key::Char('\t')) => {
-                self.rotate_tab();
-            }
-            UIEvent::Key(Key::Char('?')) 
-                | UIEvent::Key(Key::Char('h')) => {
-                    self.help = !self.help;
-                }
+            UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
+            UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
+            UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,
+            UIEvent::Key(Key::Char(':')) => self.command = LongCommand::Command(String::new()),
+            UIEvent::Key(Key::Char('?')) | UIEvent::Key(Key::Char('h')) => self.help = !self.help,
             UIEvent::Mouse(m) => match m {
                 MouseEvent::Press(btn, x, y) => {
                     self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn))

@@ -359,7 +359,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 }
             }
 
-            let status = app.last_message();
+            let status = ui.command.prompt().unwrap_or_else(|| app.last_message());
             let mut status_line = CJKText::new(&status);
             let status_inner = chunks[2].padding_hoz(1);
             status_line.render(&mut f, status_inner);
@@ -496,8 +496,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
         }
 
         loop {
-            use termion::event::Key;
-
             let mut select = Select::new();
 
             select.recv(&evrx);
@@ -509,11 +507,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                 if index == 0 {
                     let event = oper.recv(&evrx).unwrap();
-                    if let UIEvent::Key(Key::Char('q')) = event {
+                    ui.reduce(event, &mut app);
+                    if ui.pending == Some(PendingUIEvent::Quit) {
                         break 'main;
                     }
-
-                    ui.reduce(event, &mut app);
                 } else {
                     oper.recv(&apprx).unwrap();
                 }
