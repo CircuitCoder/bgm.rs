@@ -4,8 +4,10 @@
 
 mod widgets;
 mod state;
+mod help;
 use crate::widgets::*;
 use crate::state::*;
+use crate::help::*;
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
 use bgmtv::client::Client;
@@ -302,6 +304,36 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
         terminal.draw(|mut f| {
             let pending = ui.pending.clone();
 
+            let primary_chunk = if ui.help {
+                let primary_split = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(80),
+                        Constraint::Percentage(20),
+                    ].as_ref())
+                    .split(cursize);
+
+                let mut help_block = Block::default().borders(Borders::LEFT);
+                help_block.render(&mut f, primary_split[1]);
+                let help_inner = help_block.inner(primary_split[1]);
+                let mut help_texts = HELP_DATABASE
+                    .iter()
+                    .filter(|e| e.pred()(&ui))
+                    .map(Into::into)
+                    .collect::<Vec<CJKText>>();
+                let mut help_scroll = Scroll::default();
+
+                for text in help_texts.iter_mut() {
+                    help_scroll.push(text);
+                }
+
+                help_scroll.render(&mut f, help_inner);
+
+                primary_split[0]
+            } else {
+                cursize
+            };
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -309,7 +341,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     Constraint::Min(0),
                     Constraint::Length(1),
                 ].as_ref())
-                .split(cursize);
+                .split(primary_chunk);
 
             let mut tab_block = Block::default().borders(Borders::ALL).title("bgmTTY");
             tab_block.render(&mut f, chunks[0]);

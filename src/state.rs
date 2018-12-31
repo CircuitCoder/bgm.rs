@@ -153,6 +153,8 @@ pub struct UIState {
     pub(crate) focus_limit: usize,
 
     pub(crate) pending: Option<PendingUIEvent>,
+
+    pub(crate) help: bool,
 }
 
 impl Default for UIState {
@@ -166,6 +168,8 @@ impl Default for UIState {
             focus_limit: 0,
 
             pending: None,
+
+            help: false,
         }
     }
 }
@@ -245,26 +249,26 @@ impl UIState {
         use termion::event::{Key, MouseEvent};
 
         match ev {
-            UIEvent::Key(Key::Down) if self.tab == 0 => match self.focus {
-                None => {
-                    self.focus = Some(0);
-                    self.pending = Some(PendingUIEvent::ScrollIntoView(0));
-                }
-                Some(f) => {
-                    if f + 1 < self.focus_limit {
-                        self.focus = Some(f + 1);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(f + 1));
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.tab == 0 => match self.focus {
+                    None => {
+                        self.focus = Some(0);
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(0));
+                    }
+                    Some(f) => {
+                        if f + 1 < self.focus_limit {
+                            self.focus = Some(f + 1);
+                            self.pending = Some(PendingUIEvent::ScrollIntoView(f + 1));
+                        }
+                    }
+                },
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.tab == 0 => {
+                    if let Some(f) = self.focus {
+                        if f > 0 {
+                            self.focus = Some(f - 1);
+                            self.pending = Some(PendingUIEvent::ScrollIntoView(f - 1));
+                        }
                     }
                 }
-            },
-            UIEvent::Key(Key::Up) if self.tab == 0 => {
-                if let Some(f) = self.focus {
-                    if f > 0 {
-                        self.focus = Some(f - 1);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(f - 1));
-                    }
-                }
-            }
             UIEvent::Key(Key::Char('+')) if self.focus.is_some() => {
                 let focus = self.focus.unwrap();
                 let collection = app.fetch_collection().into();
@@ -293,9 +297,16 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
+            UIEvent::Key(Key::Esc) if self.focus.is_some() => {
+                self.focus = None;
+            }
             UIEvent::Key(Key::Char('\t')) => {
                 self.rotate_tab();
             }
+            UIEvent::Key(Key::Char('?')) 
+                | UIEvent::Key(Key::Char('h')) => {
+                    self.help = !self.help;
+                }
             UIEvent::Mouse(m) => match m {
                 MouseEvent::Press(btn, x, y) => {
                     self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn))
