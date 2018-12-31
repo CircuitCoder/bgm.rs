@@ -154,7 +154,7 @@ impl AppState {
     }
 
     pub fn fetch_collection_detail_weak(&mut self) -> FetchResult<(u64, Option<CollectionDetail>)> {
-        let mut guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap();
         match guard.collection_detail {
             InnerState::Fetched(id, ref result) =>
                 FetchResult::Direct((id, result.clone())),
@@ -307,7 +307,7 @@ pub enum LongCommand {
     Command(String),
     Toggle,
 
-    EditRating,
+    EditRating(String),
     EditStatus(CollectionStatus),
 }
 
@@ -325,7 +325,7 @@ impl LongCommand {
             LongCommand::Tab => Some("g".to_string()),
             LongCommand::Command(ref inner) => Some(format!(":{}", inner)),
             LongCommand::Toggle => Some("t".to_string()),
-            LongCommand::EditRating => Some("评分 (0-10): ".to_string()),
+            LongCommand::EditRating(r) => Some(format!("评分 (1-10, 0=取消): {}", r)),
             LongCommand::EditStatus(s) => Some(format!("状态: {} [Tab]", s.disp())),
         }
     }
@@ -522,6 +522,45 @@ impl UIState {
                     }
                 }
 
+                LongCommand::EditRating(ref mut rating) => {
+                    match ev {
+                        UIEvent::Key(Key::Char('\n')) => {
+                            if let Ok(mut digit) = rating.parse::<u8>() {
+                                if digit > 10 {
+                                    digit = 10;
+                                }
+
+                                if let FetchResult::Direct((id, Some(mut coll))) = app.fetch_collection_detail_weak() {
+                                    if Some(id) == self.editing {
+                                        coll.rating = digit;
+                                        app.update_collection_detail(id, coll.status.clone(), Some(coll));
+                                    }
+                                }
+                            }
+
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(Key::Backspace) => {
+                            if rating.pop().is_none() {
+                                self.command = LongCommand::Absent;
+                            }
+
+                            return self;
+                        }
+                        UIEvent::Key(Key::Char(c @ '0'...'9')) => {
+                            if rating == "" || (rating == "1" && c == '0') {
+                                rating.push(c);
+                            } else if rating == "0" {
+                                *rating = c.to_string();
+                            }
+                            return self
+                        }
+                        UIEvent::Key(_) => return self,
+                        _ => {}
+                    }
+                }
+
                 LongCommand::EditStatus(ref mut current) => {
                     match ev {
                         UIEvent::Key(Key::Char('\t')) => {
@@ -627,6 +666,12 @@ impl UIState {
                         Default::default()
                     };
                     self.command = LongCommand::EditStatus(initial);
+                }
+            }
+
+            UIEvent::Key(Key::Char('r')) if self.tab == 1 => {
+                if let FetchResult::Direct((_, Some(coll))) = app.fetch_collection_detail_weak() {
+                    self.command = LongCommand::EditRating(coll.rating.to_string());
                 }
             }
 
