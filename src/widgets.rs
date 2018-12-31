@@ -639,3 +639,19 @@ impl DynHeight for ViewProgress {
         }
     }
 }
+
+pub struct SingleCell<'a> {
+    symbol: &'a str,
+}
+
+impl<'a> SingleCell<'a> {
+    pub fn new(symbol: &'a str) -> Self {
+        Self { symbol }
+    }
+}
+
+impl<'a> Widget for SingleCell<'a> {
+    fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
+        buf.get_mut(viewport.x, viewport.y).set_symbol(self.symbol);
+    }
+}

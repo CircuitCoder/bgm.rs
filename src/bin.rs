@@ -3,10 +3,12 @@
 #![feature(fnbox)]
 
 mod widgets;
+mod state;
 use crate::widgets::*;
+use crate::state::*;
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
-use bgmtv::client::{Client, CollectionEntry, SubjectType};
+use bgmtv::client::Client;
 use bgmtv::settings::Settings;
 use clap;
 use colored::*;
@@ -17,7 +19,6 @@ use futures::future::Future;
 use std::convert::AsRef;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use termion;
 use termion::raw::IntoRawMode;
 use tokio;
@@ -252,327 +253,6 @@ fn main() {
     bootstrap(client).expect("Terminal failed");
 }
 
-#[derive(Clone)]
-enum FetchResult<T> {
-    Direct(T),
-    Deferred,
-}
-
-enum InnerState<T> {
-    Fetching,
-    Fetched(T),
-    Discarded,
-}
-
-impl<T> Into<Option<T>> for FetchResult<T> {
-    fn into(self) -> Option<T> {
-        match self {
-            FetchResult::Direct(c) => Some(c),
-            FetchResult::Deferred => None,
-        }
-    }
-}
-
-struct AppStateInner {
-    notifier: Sender<()>,
-
-    collections: InnerState<Vec<CollectionEntry>>,
-}
-
-struct AppState {
-    client: Client,
-
-    inner: Arc<Mutex<AppStateInner>>,
-
-    rt: tokio::runtime::Runtime,
-
-    fetching_collection: bool,
-}
-
-impl AppState {
-    fn create(notifier: Sender<()>, client: Client) -> AppState {
-        AppState {
-            client,
-
-            inner: Arc::new(Mutex::new(AppStateInner {
-                notifier,
-                collections: InnerState::Fetching,
-            })),
-
-            rt: tokio::runtime::Runtime::new().expect("Cannot create runtime!"),
-
-            fetching_collection: false,
-        }
-    }
-
-    fn fetch_collection(&mut self) -> FetchResult<Vec<CollectionEntry>> {
-        if self.fetching_collection {
-            let mut guard = self.inner.lock().unwrap();
-            match guard.collections {
-                InnerState::Fetched(ref entries) =>
-                    return FetchResult::Direct(entries.clone()),
-                InnerState::Fetching =>
-                    return FetchResult::Deferred,
-                _ => {
-                    // Else: discarded, restart fetch
-                    guard.collections = InnerState::Fetching;
-                }
-            }
-        }
-
-        self.fetching_collection = true;
-
-        let fut = self.client.collection(None);
-        let handle = self.inner.clone();
-
-        let fut = fut
-            .map(move |resp| {
-                let mut inner = handle.lock().unwrap();
-
-                inner.collections = InnerState::Fetched(resp);
-                inner
-                    .notifier
-                    .send(())
-                    .expect("Unable to notify the main thread");
-            })
-            .map_err(|e| println!("{}", e));
-
-        self.rt.spawn(fut);
-
-        FetchResult::Deferred
-    }
-
-    fn update_progress(&mut self, subject: &CollectionEntry, ep: Option<u64>, vol: Option<u64>) {
-        let fut = self.client.progress(subject, ep, vol);
-        let handle = self.inner.clone();
-
-        let fut = fut
-            .map(move |_| {
-                let mut inner = handle.lock().unwrap();
-
-                inner.collections = InnerState::Discarded;
-                inner
-                    .notifier
-                    .send(())
-                    .expect("Unable to notify the main thread");
-            })
-            .map_err(|e| println!("{}", e));
-        self.rt.spawn(fut);
-    }
-}
-
-const TABS: [&str; 2] = ["格子", "搜索"];
-const SELECTS: [(&str, SubjectType); 3] = [
-    ("动画骗", SubjectType::Anime),
-    ("小书本", SubjectType::Book),
-    ("三刺螈", SubjectType::Real),
-];
-
-enum UIEvent {
-    Key(termion::event::Key),
-    Mouse(termion::event::MouseEvent),
-}
-
-#[derive(Clone)]
-enum PendingUIEvent {
-    Click(u16, u16, termion::event::MouseButton),
-    ScrollIntoView(usize),
-}
-
-struct UIState {
-    tab: usize,
-    filters: [bool; SELECTS.len()],
-    scroll: u16,
-    focus: Option<usize>,
-    focus_limit: usize,
-
-    pending: Option<PendingUIEvent>,
-}
-
-impl Default for UIState {
-    fn default() -> UIState {
-        UIState {
-            tab: 0,
-            filters: [true; SELECTS.len()],
-
-            scroll: 0,
-            focus: None,
-            focus_limit: 0,
-
-            pending: None,
-        }
-    }
-}
-
-impl UIState {
-    fn rotate_tab(&mut self) {
-        if self.tab != TABS.len() - 1 {
-            self.tab += 1;
-        } else {
-            self.tab = 0;
-        }
-    }
-
-    fn select_tab(&mut self, mut tab: usize) {
-        if tab >= TABS.len() {
-            tab = TABS.len() - 1;
-        }
-
-        self.tab = tab;
-    }
-
-    fn set_focus_limit(&mut self, mf: usize) {
-        self.focus_limit = mf;
-        if let Some(f) = self.focus {
-            if f >= mf {
-                if mf == 0 {
-                    self.focus = None;
-                } else {
-                    self.focus = Some(mf - 1);
-                }
-            }
-        }
-    }
-
-    fn toggle_filter(&mut self, index: usize, entries: &Option<Vec<CollectionEntry>>) {
-        // Get original index of the filter
-        let original = self
-            .focus
-            .and_then(|focus| self.do_filter(entries).skip(focus).next())
-            .map(|e| e.subject.id);
-
-        if let Some(f) = self.filters.get_mut(index) {
-            *f = !*f;
-        }
-
-        let mut new_focus = None;
-        for (i, content) in self.do_filter(entries).enumerate() {
-            if Some(content.subject.id) == original {
-                new_focus = Some(i);
-            }
-        }
-
-        self.focus = new_focus;
-    }
-
-    pub fn do_filter<'s, 'a>(
-        &'s self,
-        entries: &'a Option<Vec<CollectionEntry>>,
-    ) -> impl Iterator<Item = &'a CollectionEntry> {
-        match entries {
-            None => itertools::Either::Left(std::iter::empty()),
-            Some(entries) => {
-                let filters = self.filters.clone();
-                itertools::Either::Right(entries.iter().filter(move |e| {
-                    for (i, (_, t)) in SELECTS.iter().enumerate() {
-                        if t == &e.subject.subject_type {
-                            return filters[i];
-                        }
-                    }
-                    return false;
-                }))
-            }
-        }
-    }
-
-    pub fn reduce(&mut self, ev: UIEvent, app: &mut AppState) -> &mut Self {
-        use termion::event::{Key, MouseEvent};
-
-        match ev {
-            UIEvent::Key(Key::Down) if self.tab == 0 => match self.focus {
-                None => {
-                    self.focus = Some(0);
-                    self.pending = Some(PendingUIEvent::ScrollIntoView(0));
-                }
-                Some(f) => {
-                    if f + 1 < self.focus_limit {
-                        self.focus = Some(f + 1);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(f + 1));
-                    }
-                }
-            },
-            UIEvent::Key(Key::Up) if self.tab == 0 => {
-                if let Some(f) = self.focus {
-                    if f > 0 {
-                        self.focus = Some(f - 1);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(f - 1));
-                    }
-                }
-            }
-            UIEvent::Key(Key::Char('+')) if self.focus.is_some() => {
-                let focus = self.focus.unwrap();
-                let collection = app.fetch_collection().into();
-                let target = self.do_filter(&collection).skip(focus).next();
-
-                if let Some(t) = target {
-                    let (ep, vol) = match t.subject.subject_type {
-                        SubjectType::Book => (None, Some(t.step_vol(1))),
-                        _ => (Some(t.step_ep(1)), None),
-                    };
-
-                    app.update_progress(t, ep, vol);
-                }
-            }
-            UIEvent::Key(Key::Char('-')) if self.focus.is_some() => {
-                let focus = self.focus.unwrap();
-                let collection = app.fetch_collection().into();
-                let target = self.do_filter(&collection).skip(focus).next();
-
-                if let Some(t) = target {
-                    let (ep, vol) = match t.subject.subject_type {
-                        SubjectType::Book => (None, Some(t.step_vol(-1))),
-                        _ => (Some(t.step_ep(-1)), None),
-                    };
-
-                    app.update_progress(t, ep, vol);
-                }
-            }
-            UIEvent::Key(Key::Char('\t')) => {
-                self.rotate_tab();
-            }
-            UIEvent::Mouse(m) => match m {
-                MouseEvent::Press(btn, x, y) => {
-                    self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn))
-                }
-                MouseEvent::Hold(x, y) => {
-                    self.pending = Some(PendingUIEvent::Click(
-                        x - 1,
-                        y - 1,
-                        termion::event::MouseButton::Left,
-                    ))
-                }
-                _ => {}
-            },
-
-            _ => {}
-        }
-
-        self
-    }
-
-    pub fn clear_pending(&mut self) -> bool {
-        if self.pending.is_some() {
-            self.pending = None;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn set_scroll(&mut self, s: u16) {
-        self.scroll = s;
-    }
-
-    pub fn scroll_delta(&mut self, delta: i16) {
-        let new_scroll = self.scroll as i16 + delta;
-        self.scroll = if new_scroll < 0 { 0 } else { new_scroll as u16 };
-    }
-
-    pub fn set_focus(&mut self, f: Option<usize>) {
-        self.focus = f;
-    }
-}
-
 trait RectExt {
     fn contains(&self, x: u16, y: u16) -> bool;
     fn padding_hoz(self, p: u16) -> Self;
@@ -624,7 +304,11 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                    Constraint::Length(1),
+                ].as_ref())
                 .split(cursize);
 
             let mut tab_block = Block::default().borders(Borders::ALL).title("bgmTTY");
@@ -643,6 +327,11 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 }
             }
 
+            let status = app.last_message();
+            let mut status_line = CJKText::new(&status);
+            let status_inner = chunks[2].padding_hoz(1);
+            status_line.render(&mut f, status_inner);
+
             match ui.tab {
                 0 => {
                     // Render collections
@@ -651,8 +340,12 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         .constraints([Constraint::Min(20), Constraint::Percentage(100)].as_ref())
                         .split(chunks[1]);
 
-                    let mut filter_block = Block::default().borders(Borders::ALL);
+                    let mut filter_block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     filter_block.render(&mut f, subchunks[0]);
+                    // Draw custom corners
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(subchunks[0].x, subchunks[0].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::HORIZONTAL_DOWN).render(&mut f, Rect::new(subchunks[0].x + subchunks[0].width - 1, subchunks[0].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::HORIZONTAL_UP).render(&mut f, Rect::new(subchunks[0].x + subchunks[0].width - 1, subchunks[0].y+subchunks[0].height-1, 1, 1));
                     let filter_inner = filter_block.inner(subchunks[0]).padding_hoz(1);
                     let filter_names = SELECTS
                         .iter()
@@ -662,9 +355,9 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     let collection = app.fetch_collection();
 
-                    let mut count = None;
+                    let count;
                     if let FetchResult::Direct(ref collection) = collection {
-                        count = Some(SELECTS.iter().map(|(_, t)| {
+                        count = SELECTS.iter().map(|(_, t)| {
                             let mut c = 0;
                             for ent in collection {
                                 if &ent.subject.subject_type == t {
@@ -673,9 +366,9 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             }
 
                             c
-                        }).collect::<Vec<usize>>());
+                        }).collect::<Vec<usize>>();
 
-                        filters = filters.counting(count.as_ref().unwrap());
+                        filters = filters.counting(&count);
                     }
                     filters.set_bound(filter_inner);
                     filters.render(&mut f, filter_inner);
@@ -691,12 +384,14 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         }
                     }
 
+                    let mut outer = Block::default().borders(Borders::ALL ^ Borders::TOP ^ Borders::LEFT);
+                    outer.render(&mut f, subchunks[1]);
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(subchunks[1].x + subchunks[1].width - 1, subchunks[1].y-1, 1, 1));
+
                     if let FetchResult::Direct(collection) = collection {
                         // Sync app state into ui state
                         ui.set_focus_limit(collection.len());
 
-                        let mut outer = Block::default().borders(Borders::ALL);
-                        outer.render(&mut f, subchunks[1]);
                         let inner = outer.inner(subchunks[1]);
 
                         let mut scroll = Scroll::default();
@@ -752,8 +447,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             }
                         }
                     } else {
-                        let mut outer = Block::default().borders(Borders::ALL);
-                        outer.render(&mut f, subchunks[1]);
                         let region = outer.inner(subchunks[1]).inner(1);
 
                         Paragraph::new([Text::raw("Loading...")].iter())
