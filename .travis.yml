@@ -9,11 +9,13 @@ rust:
 script:
 - cargo build --release --verbose
 - ls target/release
+- mv target/release/bgmtty target/release/bgmtty-$TRAVIS_OS_NAME && true
 deploy:
   provider: releases
   api_key:
     secure: RKDUzX3rFcF8XKsC/uOQ9KXWXo4t4ulRLEYLbeFZ7P7rXvoNpWBP+tM3BZcph8WItT6wNAw3Nr/INU6w/wwV8zy0DgcOvoK7tp0BZysGesUApQPZZ6iFnlcF+485s69xlzbj2AbsmBbG5oFjP1dVPDLj2xBIZW6MsMa8d8wlLGFNBwRbATM0uAzEVl/1XbXVg+hWMJVyigthKP+qPduDt4NvI9dzf6PcMqTdeMF3mJdb5aiq43NAjPV0IUhr3s3MMmnegWcZuYOsjC1BaPkIVqUmKXPEbR/xL18X6mVKIc3QEYupJfBNZGqXH3DJhcrkWiS4hSOiXDpxcXwaruoO9jtEngwnAVIh75Q23BleyNNpPH9h9jdUWWX6mm+Wwyi8GObdXOk3bx/6VmPYk6vpOgSreGuOEghoBkKGvGW+aP7cWGDNUSEYUwLYeSGddpBLLc7hYomOpccK5qvH9khM10A5hjaId4FdW4jNpvKg4w+D+3/RqdbimzJZx1CRH48v0BQD+2czLdMEa5hVsBYF/XvLU3YU7AdbNmd1wAy9iwdSsptD+hdMlpIoIOODT1Dn9TcqS7yhMOflNF/7cg4jwfQDoWeJnaCZNrtZv5BLc68w1aoDO/yjGAKOldTcFVkytexOOnxhP405rtKdvSa4iB5eRVpqMdJANyf0SXaLMY4=
   file: target/release/bgmtty
   skip_cleanup: true
+  draft: true
   on:
     repo: CircuitCoder/bgm.rs
