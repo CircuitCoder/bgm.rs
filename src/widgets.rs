@@ -320,15 +320,14 @@ impl<'a> ViewingEntry<'a> {
         let text_cn = CJKText::new(ent.subject.name_cn.as_str());
 
         let progress = match ent.subject.subject_type {
-            SubjectType::Book if ent.subject.vols_count.is_some() => Some(ViewProgress::new(
-                ent.subject.vols_count.unwrap(),
+            SubjectType::Book => Some(ViewProgress::new(
+                ent.subject.vols_count,
                 ent.vol_status,
             )),
-            SubjectType::Anime if ent.subject.eps_count.is_some() => Some(ViewProgress::new(
-                ent.subject.eps_count.unwrap(),
+            _ => Some(ViewProgress::new(
+                ent.subject.eps_count,
                 ent.ep_status,
             )),
-            _ => None,
         };
 
         Self {
@@ -585,13 +584,22 @@ impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
 }
 
 struct ViewProgress {
-    total: u64,
+    total: Option<u64>,
     current: u64,
 }
 
 impl ViewProgress {
-    fn new(total: u64, current: u64) -> Self {
+    fn new(total: Option<u64>, current: u64) -> Self {
         Self { total, current }
+    }
+
+    fn text_hint(&self) -> String {
+        match self.total {
+            Some(total) => 
+                format!("{} / {}", self.current, total),
+            None =>
+                format!("{} / ?", self.current),
+        }
     }
 }
 
@@ -600,14 +608,14 @@ const SHADE: &str = "▒";
 impl Widget for ViewProgress {
     fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
         // Write digits
-        let text = format!("{} / {}", self.current, self.total);
+        let text = self.text_hint();
         let mut text_widget = CJKText::new(&text);
         text_widget.draw(viewport, buf);
 
         let text_height = text_widget.height(viewport.width);
 
         // Draw blocks
-        for i in 0..self.total as u16 {
+        for i in 0..self.total.unwrap_or(self.current + 1) as u16 {
             let dy = i / viewport.width;
             let dx = i % viewport.width;
 
@@ -633,9 +641,9 @@ impl DynHeight for ViewProgress {
         if width == 0 {
             0
         } else {
-            let text = format!("{} / {}", self.current, self.total);
+            let text = self.text_hint();
             let text_widget = CJKText::new(&text);
-            text_widget.height(width) + (self.total as u16 + width - 1) / width
+            text_widget.height(width) + (self.total.unwrap_or(self.current + 1) as u16 + width - 1) / width
         }
     }
 }
