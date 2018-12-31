@@ -1,4 +1,4 @@
-use crate::state::UIState;
+use crate::state::{UIState, Tab};
 use crate::widgets::CJKText;
 use tui::style::{Style,Modifier,Color};
 
@@ -32,6 +32,14 @@ impl<'a> Into<CJKText<'static>> for &'a HelpEntry {
     }
 }
 
+fn is_subject(ui: &UIState) -> bool {
+    ui.active_tab().is_subject()
+}
+
+fn is_collection(ui: &UIState) -> bool {
+    ui.active_tab().is_collection()
+}
+
 pub const HELP_DATABASE: [HelpEntry; 17] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
@@ -42,22 +50,22 @@ pub const HELP_DATABASE: [HelpEntry; 17] = [
     HelpEntry(&["gT"], "上一个 Tab", &|_| true),
 
     // On primary tab
-    HelpEntry(&["k", "Up"], "选择上一个", &|ui| ui.tab == 0 && ui.focus.is_some()),
-    HelpEntry(&["j", "Down"], "选择下一个", &|ui| ui.tab == 0 && ui.focus.is_some()),
-    HelpEntry(&["j", "Down"], "选择第一个", &|ui| ui.tab == 0 && ui.focus.is_none()),
-    HelpEntry(&["t<i>"], "切换第 i 个过滤选项", &|ui| ui.tab == 0),
+    HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_collection(ui) && ui.focus.is_some()),
+    HelpEntry(&["j", "Down"], "选择下一个", &|ui| is_collection(ui) && ui.focus.is_some()),
+    HelpEntry(&["j", "Down"], "选择第一个", &|ui| is_collection(ui) && ui.focus.is_none()),
+    HelpEntry(&["t<i>"], "切换第 i 个过滤选项", &|ui| is_collection(ui)),
 
     // When have focus
-    HelpEntry(&["+"], "增加进度", &|ui| ui.tab == 0 && ui.focus.is_some()),
-    HelpEntry(&["-"], "减少进度", &|ui| ui.tab == 0 && ui.focus.is_some()),
-    HelpEntry(&["Enter"], "详情/编辑", &|ui| ui.tab == 0 && ui.focus.is_some()),
-    HelpEntry(&["Esc"], "取消选择", &|ui| ui.tab == 0 && ui.focus.is_some()),
+    HelpEntry(&["+"], "增加进度", &|ui| is_collection(ui) && ui.focus.is_some()),
+    HelpEntry(&["-"], "减少进度", &|ui| is_collection(ui) && ui.focus.is_some()),
+    HelpEntry(&["Enter"], "详情/编辑", &|ui| is_collection(ui) && ui.focus.is_some()),
+    HelpEntry(&["Esc"], "取消选择", &|ui| is_collection(ui) && ui.focus.is_some()),
 
     // When in subject page
-    HelpEntry(&["s"], "修改收藏状态", &|ui| ui.tab == 1),
-    HelpEntry(&["r"], "修改评分", &|ui| ui.tab == 1),
-    HelpEntry(&["t"], "修改标签", &|ui| ui.tab == 1),
-    HelpEntry(&["c"], "修改评论", &|ui| ui.tab == 1),
+    HelpEntry(&["s"], "修改收藏状态", &is_subject),
+    HelpEntry(&["r"], "修改评分", &is_subject),
+    HelpEntry(&["t"], "修改标签", &is_subject),
+    HelpEntry(&["c"], "修改评论", &is_subject),
 
     // Long command
     HelpEntry(&["Esc"], "取消命令", &|ui| ui.command.present()),

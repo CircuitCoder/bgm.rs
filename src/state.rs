@@ -288,12 +288,51 @@ impl AppState {
     }
 }
 
-pub const TABS: [&str; 3] = ["格子", "条目", "搜索"];
 pub const SELECTS: [(&str, SubjectType); 3] = [
     ("动画骗", SubjectType::Anime),
     ("小书本", SubjectType::Book),
     ("三刺螈", SubjectType::Real),
 ];
+
+#[derive(PartialEq, Clone)]
+pub enum Tab {
+    Collection,
+    Search,
+
+    Subject(u64),
+}
+
+impl Tab {
+    pub fn persistent(&self) -> bool {
+        match self {
+            Tab::Collection => true,
+            Tab::Search => true,
+            _ => false,
+        }
+    }
+
+    pub fn disp(&self, app: &AppState) -> String {
+        match self {
+            Tab::Collection => "格子".to_string(),
+            Tab::Search => "搜索".to_string(),
+            Tab::Subject(id) => format!("条目: {}", id),
+        }
+    }
+
+    pub fn is_collection(&self) -> bool {
+        match self {
+            Tab::Collection => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_subject(&self) -> bool {
+        match self {
+            Tab::Subject(_) => true,
+            _ => false,
+        }
+    }
+}
 
 #[derive(Clone, PartialEq)]
 pub enum UIEvent {
@@ -341,6 +380,7 @@ impl LongCommand {
 }
 
 pub struct UIState {
+    pub(crate) tabs: Vec<Tab>,
     pub(crate) tab: usize,
     pub(crate) filters: [bool; SELECTS.len()],
     pub(crate) scroll: u16,
@@ -362,6 +402,10 @@ pub struct UIState {
 impl UIState {
     pub fn with(stdin_lock: Arc<Mutex<()>>) -> UIState {
         UIState {
+            tabs: [
+                Tab::Collection,
+                Tab::Search,
+            ].to_vec(),
             tab: 0,
             filters: [true; SELECTS.len()],
 
@@ -383,7 +427,7 @@ impl UIState {
     }
 
     pub fn rotate_tab(&mut self) {
-        if self.tab != TABS.len() - 1 {
+        if self.tab != self.tabs.len() - 1 {
             self.tab += 1;
         } else {
             self.tab = 0;
@@ -394,16 +438,21 @@ impl UIState {
         if self.tab != 0 {
             self.tab -= 1;
         } else {
-            self.tab = TABS.len() - 1;
+            self.tab = self.tabs.len() - 1;
         }
     }
 
     pub fn select_tab(&mut self, mut tab: usize) {
-        if tab >= TABS.len() {
-            tab = TABS.len() - 1;
+        if tab >= self.tabs.len() {
+            tab = self.tabs.len() - 1;
         }
 
         self.tab = tab;
+    }
+
+    pub fn active_tab(&self) -> &Tab {
+        // This really should not break
+        self.tabs.get(self.tab).unwrap()
     }
 
     pub fn set_focus_limit(&mut self, mf: usize) {
@@ -610,7 +659,7 @@ impl UIState {
         match ev {
             UIEvent::Key(Key::Ctrl('q')) => self.pending = Some(PendingUIEvent::Quit),
 
-            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.tab == 0 => match self.focus {
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_collection() => match self.focus {
                     None => {
                         self.focus = Some(0);
                         self.pending = Some(PendingUIEvent::ScrollIntoView(0));
@@ -622,7 +671,7 @@ impl UIState {
                         }
                     }
                 },
-            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.tab == 0 => {
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_collection() => {
                     if let Some(f) = self.focus {
                         if f > 0 {
                             self.focus = Some(f - 1);
@@ -630,7 +679,7 @@ impl UIState {
                         }
                     }
                 }
-            UIEvent::Key(Key::Char('t')) if self.tab == 0 => {
+            UIEvent::Key(Key::Char('t')) if self.active_tab().is_collection() => {
                 self.command = LongCommand::Toggle;
             }
             UIEvent::Key(Key::Char('+')) if self.focus.is_some() => {
@@ -664,7 +713,7 @@ impl UIState {
             UIEvent::Key(Key::Char('\n')) if self.focus.is_some() => self.goto_detail(self.focus.unwrap(), app),
             UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
 
-            UIEvent::Key(Key::Char('s')) if self.tab == 1 => {
+            UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
                 if let FetchResult::Direct((_, coll)) = app.fetch_collection_detail_weak() {
                     let initial = if let Some(coll) = coll {
                         coll.status
@@ -675,13 +724,13 @@ impl UIState {
                 }
             }
 
-            UIEvent::Key(Key::Char('r')) if self.tab == 1 => {
+            UIEvent::Key(Key::Char('r')) if self.active_tab().is_subject() => {
                 if let FetchResult::Direct((_, Some(coll))) = app.fetch_collection_detail_weak() {
                     self.command = LongCommand::EditRating(coll.rating.to_string());
                 }
             }
 
-            UIEvent::Key(Key::Char('c')) if self.tab == 1 => {
+            UIEvent::Key(Key::Char('c')) if self.active_tab().is_subject() => {
                 if let Some(id) = self.editing {
                     if let FetchResult::Direct((_, Some(mut coll))) = app.fetch_collection_detail_weak() {
                         if let Ok(Some(content)) = self.edit(&coll.comment) {

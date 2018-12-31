@@ -396,7 +396,9 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             let mut tab_block = Block::default().borders(Borders::ALL).title("bgmTTY");
             tab_block.render(&mut f, chunks[0]);
             let tab_inner = tab_block.inner(chunks[0]);
-            let mut tabber = Tabber::with(&TABS).select(ui.tab);
+            let tab_names = ui.tabs.iter().map(|e| e.disp(&app)).collect::<Vec<_>>();
+            let tab_name_borrows = tab_names.iter().map(|e| e.as_str()).collect::<Vec<_>>();
+            let mut tabber = Tabber::with(tab_name_borrows.as_slice()).select(ui.tab);
             tabber.set_bound(tab_inner);
             tabber.render(&mut f, tab_inner);
 
