@@ -70,10 +70,10 @@ impl<'a> Scroll<'a> {
 
         let mut start = 0;
         for i in 0..index {
-            start += self.content[i].height(self.bound.width);
+            start += self.content[i].height(self.bound.width-1);
         }
 
-        let end = start + self.content[index].height(self.bound.width);
+        let end = start + self.content[index].height(self.bound.width-1);
 
         let new_offset = if start < self.offset {
             start
@@ -174,7 +174,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
             _ => {}
         }
 
-        let h = self.inner_height(self.bound.width);
+        let h = self.inner_height(self.bound.width-1);
 
         if x == self.bound.x + self.bound.width - 1 {
             // Scrollbar
@@ -196,7 +196,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
             let mut y = y - self.bound.y + self.offset;
 
             for i in 0..self.content.len() {
-                let h = self.content[i].height(self.bound.width);
+                let h = self.content[i].height(self.bound.width-1);
                 if h > y {
                     return Some(ScrollEvent::Sub(i));
                 }
@@ -211,7 +211,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
     fn set_bound(&mut self, area: Rect) {
         self.bound = area;
 
-        let new_height = self.inner_height(area.width);
+        let new_height = self.inner_height(area.width-1);
         if new_height <= area.height {
             self.offset = 0;
         } else if new_height <= area.height + self.offset {

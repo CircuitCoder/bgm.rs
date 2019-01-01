@@ -604,6 +604,7 @@ pub struct UIState {
     pub(crate) pending: Option<PendingUIEvent>,
 
     pub(crate) help: bool,
+    pub(crate) help_scroll: ScrollState,
 
     pub(crate) command: LongCommand,
 
@@ -625,12 +626,13 @@ impl UIState {
             tab: 0,
             filters: [true; SELECTS.len()],
 
-            scroll: ScrollState::default(),
+            scroll: Default::default(),
             focus: Default::default(),
 
             pending: None,
 
             help: false,
+            help_scroll: Default::default(),
 
             command: LongCommand::Absent,
 
@@ -1166,6 +1168,9 @@ impl UIState {
                 }
             UIEvent::Key(Key::Char(':')) => self.command = LongCommand::Command(String::new()),
             UIEvent::Key(Key::Char('?')) | UIEvent::Key(Key::Char('h')) => self.help = !self.help,
+            UIEvent::Key(Key::Char('J')) if self.help => self.help_scroll.delta(1),
+            UIEvent::Key(Key::Char('K')) if self.help => self.help_scroll.delta(-1),
+
             UIEvent::Mouse(m) => match m {
                 MouseEvent::Press(btn, x, y) => {
                     self.pending = Some(PendingUIEvent::Click(x - 1, y - 1, btn));

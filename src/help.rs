@@ -48,9 +48,11 @@ fn is_search_result(ui: &UIState) -> bool {
     ui.active_tab().is_search_result()
 }
 
-pub const HELP_DATABASE: [HelpEntry; 30] = [
+pub const HELP_DATABASE: [HelpEntry; 32] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
+    HelpEntry(&["K"], "向上滚动帮助", &|ui| ui.help),
+    HelpEntry(&["J"], "向下滚动帮助", &|ui| ui.help),
     HelpEntry(&[":qa", "C-q"], "Rage quit", &|_| true),
 
     HelpEntry(&["R"], "刷新", &|ui| !is_search(ui)),

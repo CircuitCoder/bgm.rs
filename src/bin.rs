@@ -418,7 +418,27 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     help_scroll.push(text);
                 }
 
+                let mut help_scroll = help_scroll.scroll(ui.help_scroll.get());
+                help_scroll.set_bound(help_inner);
+                ui.help_scroll.set(help_scroll.get_scroll());
                 help_scroll.render(&mut f, help_inner);
+
+                if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
+                    if help_inner.contains(x, y) {
+                        match help_scroll.intercept(x, y, btn) {
+                            Some(ScrollEvent::ScrollTo(pos)) => {
+                                ui.help_scroll.set(pos);
+                            }
+                            Some(ScrollEvent::ScrollUp) => {
+                                ui.help_scroll.delta(-1);
+                            }
+                            Some(ScrollEvent::ScrollDown) => {
+                                ui.help_scroll.delta(1);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
 
                 primary_split[0]
             } else {
