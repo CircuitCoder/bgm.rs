@@ -505,6 +505,13 @@ impl Tab {
             _ => None,
         }
     }
+
+    pub fn get_focus(&self) -> Option<usize> {
+        match self {
+            Tab::SearchResult{ focus, .. } => focus.get(),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -1010,6 +1017,7 @@ impl UIState {
                         self.pending = Some(PendingUIEvent::ScrollIntoView(f));
                     }
                 }
+
             UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_search_result() =>
                 if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
                     focus.prev();
@@ -1017,6 +1025,24 @@ impl UIState {
                         self.pending = Some(PendingUIEvent::ScrollIntoView(f));
                     }
                 }
+
+            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_search_result() && self.active_tab().get_focus().is_some() => {
+                if let Tab::SearchResult{ ref search, ref focus, .. } = self.active_tab() {
+                    let focus = focus.get().unwrap();
+                    let result: Option<_> = app.fetch_search(search).into();
+                    let target = result.as_ref().and_then(|result: &PopulatedSearchResult| result.list.iter().skip(focus).next());
+
+                    if let Some(t) = target {
+                        self.goto_detail(t.id);
+                    }
+                }
+            }
+
+            UIEvent::Key(Key::Esc) if self.active_tab().is_search_result() && self.active_tab().get_focus().is_some() => {
+                if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
+                    focus.set(None);
+                }
+            }
 
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,
