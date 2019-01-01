@@ -395,12 +395,12 @@ impl ScrollState {
 }
 
 #[derive(Default, Clone, PartialEq)]
-pub struct Focus {
+pub struct FocusState {
     focus: Option<usize>,
     limit: usize,
 }
 
-impl Focus {
+impl FocusState {
     fn normalize(&mut self) {
         if let Some(f) = self.focus {
             if f >= self.limit {
@@ -458,7 +458,7 @@ pub enum Tab {
     SearchResult{
         search: String,
         scroll: ScrollState,
-        focus: Focus,
+        focus: FocusState,
     },
 }
 
@@ -567,7 +567,7 @@ pub struct UIState {
     pub(crate) tab: usize,
     pub(crate) filters: [bool; SELECTS.len()],
     pub(crate) scroll: ScrollState,
-    pub(crate) focus: Focus,
+    pub(crate) focus: FocusState,
 
     pub(crate) pending: Option<PendingUIEvent>,
 
