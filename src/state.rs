@@ -410,6 +410,7 @@ pub enum Tab {
     SearchResult{
         search: String,
         scroll: ScrollState,
+        focus: Option<usize>,
     },
 }
 
@@ -578,6 +579,10 @@ impl UIState {
 
         self.tabs.insert(pos, tab);
         pos
+    }
+
+    pub fn replace_tab(&mut self, tab: Tab) {
+        self.tabs[self.tab] = tab;
     }
 
     pub fn move_tab(&mut self, mut dest: usize) -> usize {
@@ -901,7 +906,15 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_collection() && self.focus.is_some() => self.goto_detail(self.focus.unwrap(), app),
+            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_collection() && self.focus.is_some() => {
+                let focus = self.focus.unwrap();
+                let collection = app.fetch_collection().into();
+                let target = self.do_filter(&collection).skip(focus).next();
+
+                if let Some(t) = target {
+                    self.goto_detail(t.subject.id);
+                }
+            }
             UIEvent::Key(Key::Esc) if self.active_tab().is_collection() && self.focus.is_some() => self.focus = None,
 
             UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
@@ -943,7 +956,11 @@ impl UIState {
                     if text == "" {
                         self.command = LongCommand::SearchInput(String::new());
                     } else {
-                        self.tab = self.open_tab(Tab::SearchResult{ search: text.clone(), scroll: Default::default() }, None);
+                        self.replace_tab(Tab::SearchResult{
+                            search: text.clone(),
+                            scroll: Default::default(),
+                            focus: None,
+                        });
                     }
                 }
             }
@@ -1011,20 +1028,15 @@ impl UIState {
             && self.last_click_interval.unwrap() < Duration::from_millis(300)
     }
 
-    pub fn goto_detail(&mut self, focus: usize, app: &mut AppState) {
-        let collection = app.fetch_collection().into();
-        let target = self.do_filter(&collection).skip(focus).next();
-
-        if let Some(target) = target {
-            for (i, t) in self.tabs.iter().enumerate() {
-                if t.subject_id() == Some(target.subject.id) {
-                    self.tab = i;
-                    return;
-                }
+    pub fn goto_detail(&mut self, id: u64) {
+        for (i, t) in self.tabs.iter().enumerate() {
+            if t.subject_id() == Some(id) {
+                self.tab = i;
+                return;
             }
-
-            self.tab = self.open_tab(Tab::Subject{ id: target.subject.id, scroll: ScrollState::default() }, None);
         }
+
+        self.tab = self.open_tab(Tab::Subject{ id, scroll: ScrollState::default() }, None);
     }
 
     /**

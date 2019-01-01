@@ -454,6 +454,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             let status_inner = chunks[2].padding_hoz(1);
             status_line.render(&mut f, status_inner);
 
+            let is_double_click = ui.is_double_click();
             match ui.active_tab_mut() {
                 Tab::Collection => {
                     // Render collections
@@ -560,8 +561,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y, btn)
                                     {
                                         Some(ViewingEntryEvent::Click) => {
-                                            if ui.focus == Some(i) && ui.is_double_click() {
-                                                ui.goto_detail(i, &mut app);
+                                            if ui.focus == Some(i) && is_double_click {
+                                                ui.goto_detail(collection.unwrap()[i].subject.id);
                                             } else {
                                                 ui.set_focus(Some(i));
                                             }
@@ -581,6 +582,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             .render(&mut f, region);
                     };
                 }
+
                 Tab::Search{ ref text } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
@@ -597,6 +599,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     text.set_style(tui::style::Style::default().fg(tui::style::Color::White));
                     text.render(&mut f, input_inner);
                 }
+
                 Tab::Subject{ id, scroll: ref mut scroll_val } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
@@ -703,7 +706,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     }
                 }
 
-                Tab::SearchResult{ ref search, scroll: ref mut scroll_val } => {
+                Tab::SearchResult{ ref search, scroll: ref mut scroll_val, ref mut focus } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
                     SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
@@ -736,6 +739,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             let mut ents = result.list.iter().map(ViewingEntry::with_subject).collect::<Vec<_>>();
 
+                            if let Some(focus) = focus.and_then(|focus| ents.get_mut(focus)) {
+                                focus.select(true);
+                            }
+
                             for ent in ents.iter_mut() {
                                 scroll.push(ent);
                             }
@@ -746,6 +753,38 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             scroll_val.set(scroll.get_scroll());
 
                             scroll.render(&mut f, inner);
+
+                            if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
+                                scroll.scroll_into_view(index);
+                                scroll_val.set(scroll.get_scroll());
+                            }
+
+                            if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
+                                if inner.contains(x, y) {
+                                    match scroll.intercept(x, y, btn) {
+                                        Some(ScrollEvent::ScrollTo(pos)) => {
+                                            scroll_val.set(pos);
+                                        }
+                                        Some(ScrollEvent::ScrollUp) => {
+                                            scroll_val.delta(-1);
+                                        }
+                                        Some(ScrollEvent::ScrollDown) => {
+                                            scroll_val.delta(1);
+                                        }
+                                        Some(ScrollEvent::Sub(i)) => match ents[i-1].intercept(x, y, btn) {
+                                            Some(ViewingEntryEvent::Click) => {
+                                                if *focus == Some(i-1) && is_double_click {
+                                                    ui.goto_detail(result.list[i-1].id);
+                                                } else {
+                                                    *focus = Some(i-1);
+                                                }
+                                            }
+                                            _ => {}
+                                        },
+                                        _ => {}
+                                    }
+                                }
+                            }
                         }
                     }
                 }
