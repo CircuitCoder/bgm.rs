@@ -706,7 +706,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     }
                 }
 
-                Tab::SearchResult{ ref search, scroll: ref mut scroll_val, ref mut focus } => {
+                Tab::SearchResult{ ref search, index, scroll: ref mut scroll_val, ref mut focus } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
                     SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
@@ -714,7 +714,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     let inner = block.inner(chunks[1]);
 
 
-                    match app.fetch_search(search) {
+                    match app.fetch_search(search, *index) {
                         FetchResult::Deferred => {
                             let region = inner.inner(1);
                             Paragraph::new([Text::raw("Loading...")].iter())
@@ -729,13 +729,32 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             let mut scroll = Scroll::default();
                             let count = result.count.to_string();
+                            let visible = result.list.len().to_string();
+                            let lower = (*index * SEARCH_PAGING + 1).to_string();
+                            let upper = std::cmp::min(result.count as usize, (1+*index) * SEARCH_PAGING).to_string();
 
-                            let mut heading = CJKText::raw([
-                                (search.as_str(), Style::default().fg(Color::Green)),
-                                ("\n", Style::default()),
-                                (count.as_str(), Style::default().fg(Color::Yellow)),
-                                (" 条结果", Style::default()),
-                            ].to_vec());
+                            let mut heading = if result.count == 0 {
+                                CJKText::raw([
+                                    (search.as_str(), Style::default().fg(Color::Green)),
+                                    ("\n", Style::default()),
+                                    ("这里是", Style::default()),
+                                    ("没有猫咪", Style::default().fg(Color::Yellow)),
+                                    ("的荒原\n\n是不是越界了?", Style::default()),
+                                ].to_vec())
+                            } else {
+                                CJKText::raw([
+                                    (search.as_str(), Style::default().fg(Color::Green)),
+                                    ("\n", Style::default()),
+                                    (count.as_str(), Style::default().fg(Color::Yellow)),
+                                    (" 结果，", Style::default()),
+                                    (lower.as_str(), Style::default().fg(Color::Yellow)),
+                                    (" - ", Style::default()),
+                                    (upper.as_str(), Style::default().fg(Color::Yellow)),
+                                    ("，", Style::default()),
+                                    (visible.as_str(), Style::default().fg(Color::Yellow)),
+                                    (" 可见", Style::default()),
+                                ].to_vec())
+                            };
 
                             scroll.push(&mut heading);
 
@@ -749,8 +768,9 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                 scroll.push(ent);
                             }
 
+                            let inner = inner.padding_left(1);
+
                             let mut scroll = scroll.scroll(scroll_val.get());
-                            scroll.set_bound(inner);
                             scroll.set_bound(inner);
                             scroll_val.set(scroll.get_scroll());
 

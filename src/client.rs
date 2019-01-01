@@ -168,8 +168,14 @@ impl ClientAuthBearer for req::RequestBuilder {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct SearchResult {
+pub struct SearchResultRaw {
     #[serde(rename = "results")]
+    pub count: usize,
+    pub list: Option<Vec<SubjectSmall>>,
+}
+
+#[derive(Clone)]
+pub struct SearchResult {
     pub count: usize,
     pub list: Vec<SubjectSmall>,
 }
@@ -307,21 +313,26 @@ impl Client {
         .map_err(|e| e.into())
     }
 
-    pub fn search(&self, keywords: &str) -> impl Future<Item = SearchResult, Error = failure::Error> {
+    pub fn search(&self, keywords: &str, len: usize, skip: usize) -> impl Future<Item = SearchResult, Error = failure::Error> {
         let keywords = itertools::join(form_urlencoded::byte_serialize(keywords.as_bytes()), "");
 
         let c = req::Client::new();
         c.get(&format!(
-            "{}/search/subject/{}",
+            "{}/search/subject/{}?start={}&max_results={}",
             API_ROOT!(),
-            keywords
+            keywords,
+            skip,
+            len,
         ))
         .apply_auth(self)
         .send()
         .and_then(|mut resp| resp.json())
-        .map(|resp: APIResp<SearchResult>| {
+        .map(|resp: APIResp<SearchResultRaw>| {
             match resp {
-                APIResp::Success(r) => r,
+                APIResp::Success(r) => SearchResult{
+                    count: r.count,
+                    list: r.list.unwrap_or_else(Vec::new),
+                },
                 APIResp::Error{ .. } => SearchResult::default(),
             }
         })

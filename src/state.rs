@@ -62,13 +62,15 @@ pub struct PopulatedSearchResult {
     pub list: Vec<SubjectSmall>,
 }
 
+pub const SEARCH_PAGING: usize = 10;
+
 struct AppStateInner {
     notifier: Sender<()>,
 
     collections: InnerState<(), Vec<CollectionEntry>>,
     collection_detail: HashMap<u64, InnerState<(), Option<CollectionDetail>>>,
     subject: HashMap<u64, InnerState<(), SubjectSmall>>,
-    search: HashMap<String, InnerState<(), ShallowSearchResult>>,
+    search: HashMap<(String, usize), InnerState<(), ShallowSearchResult>>,
 
     messages: Vec<String>,
 }
@@ -304,9 +306,9 @@ impl AppState {
         FetchResult::Direct(PopulatedSearchResult{ count, list })
     }
 
-    pub fn fetch_search(&mut self, search: &str) -> FetchResult<PopulatedSearchResult> {
+    pub fn fetch_search(&mut self, search: &str, index: usize) -> FetchResult<PopulatedSearchResult> {
         let mut guard = self.inner.lock().unwrap();
-        let entry = guard.search.entry(search.to_string());
+        let entry = guard.search.entry((search.to_string(), index));
         match entry {
             hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
             hash_map::Entry::Occupied(mut entry) =>
@@ -329,7 +331,8 @@ impl AppState {
         guard.notifier.send(()).unwrap();
         drop(guard);
 
-        let fut = self.client.search(search);
+        let skip = index * SEARCH_PAGING;
+        let fut = self.client.search(search, SEARCH_PAGING, skip);
         let handle = self.inner.clone();
 
         let search = search.to_string();
@@ -346,7 +349,7 @@ impl AppState {
                     inner.subject.insert(subject.id, InnerState::Fetched((), subject));
                 }
 
-                inner.search.insert(search, InnerState::Fetched((), ShallowSearchResult{ count, ids }));
+                inner.search.insert((search, index), InnerState::Fetched((), ShallowSearchResult{ count, ids }));
 
                 inner.messages.push("搜索完成！".to_string());
                 inner
@@ -457,18 +460,20 @@ pub enum Tab {
 
     SearchResult{
         search: String,
+        index: usize,
         scroll: ScrollState,
         focus: FocusState,
     },
 }
 
 impl Tab {
-    pub fn disp(&self, app: &AppState) -> String {
+    pub fn disp(&self, _app: &AppState) -> String {
+        // TODO: truncate
         match self {
             Tab::Collection => "格子".to_string(),
             Tab::Search{ .. } => "搜索".to_string(),
             Tab::Subject{ id, .. } => format!("条目: {}", id),
-            Tab::SearchResult{ search, .. } => format!("搜索: {}", search),
+            Tab::SearchResult{ search, index, .. } => format!("搜索: {} / {}", search, index+1),
         }
     }
 
@@ -988,6 +993,16 @@ impl UIState {
                 }
             }
 
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_subject() =>
+                if let Tab::Subject{ ref mut scroll, .. } = self.active_tab_mut() {
+                    scroll.delta(1)
+                }
+
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_subject() =>
+                if let Tab::Subject{ ref mut scroll, .. } = self.active_tab_mut() {
+                    scroll.delta(-1)
+                }
+
             UIEvent::Key(Key::Esc) if self.active_tab().is_subject() => self.close_tab(self.tab),
 
             UIEvent::Key(Key::Char('\n')) if self.active_tab().is_search() => {
@@ -997,6 +1012,7 @@ impl UIState {
                     } else {
                         self.replace_tab(Tab::SearchResult{
                             search: text.clone(),
+                            index: 0,
                             scroll: Default::default(),
                             focus: Default::default(),
                         });
@@ -1027,9 +1043,9 @@ impl UIState {
                 }
 
             UIEvent::Key(Key::Char('\n')) if self.active_tab().is_search_result() && self.active_tab().get_focus().is_some() => {
-                if let Tab::SearchResult{ ref search, ref focus, .. } = self.active_tab() {
+                if let Tab::SearchResult{ ref search, index, ref focus, .. } = self.active_tab() {
                     let focus = focus.get().unwrap();
-                    let result: Option<_> = app.fetch_search(search).into();
+                    let result: Option<_> = app.fetch_search(search, *index).into();
                     let target = result.as_ref().and_then(|result: &PopulatedSearchResult| result.list.iter().skip(focus).next());
 
                     if let Some(t) = target {
@@ -1041,6 +1057,20 @@ impl UIState {
             UIEvent::Key(Key::Esc) if self.active_tab().is_search_result() && self.active_tab().get_focus().is_some() => {
                 if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
                     focus.set(None);
+                }
+            }
+
+            UIEvent::Key(Key::Char('n')) if self.active_tab().is_search_result() => {
+                if let Tab::SearchResult{ ref mut index, .. } = self.active_tab_mut() {
+                    *index += 1;
+                }
+            }
+
+            UIEvent::Key(Key::Char('N')) if self.active_tab().is_search_result() => {
+                if let Tab::SearchResult{ ref mut index, .. } = self.active_tab_mut() {
+                    if *index > 0 {
+                        *index -= 1;
+                    }
                 }
             }
 
