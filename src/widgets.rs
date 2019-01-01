@@ -45,6 +45,9 @@ impl<'a> Default for Scroll<'a> {
 
 impl<'a> Scroll<'a> {
     fn inner_height(&self, width: u16) -> u16 {
+        if width == 0 {
+            return 0;
+        }
         self.content.iter().fold(0, |acc, e| acc + e.height(width))
     }
 
@@ -407,6 +410,10 @@ impl<'a> ViewingEntry<'a> {
 
 impl<'a> Widget for ViewingEntry<'a> {
     fn draw(&mut self, area: Rect, buf: &mut Buffer) {
+        if area.width <= 2 {
+            return;
+        }
+
         let bs = if self.selected {
             Style::default().fg(Color::Green)
         } else {
@@ -437,6 +444,10 @@ impl<'a> Widget for ViewingEntry<'a> {
 
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
+        if width <= 2 {
+            return 0
+        }
+
         2 + self.apply_text(|t| t.height(width - 2))
             + self
                 .progress()
@@ -491,6 +502,11 @@ impl<'a> Widget for Tabber<'a> {
             }
 
             let width = text.oneline_min_width();
+
+            if viewport.width <= dx { // Already overflow
+                break;
+            }
+
             let maxwidth = viewport.width - dx;
 
             let width = std::cmp::min(width, maxwidth);

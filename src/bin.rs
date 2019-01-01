@@ -561,12 +561,15 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         }
 
                         let mut scroll = scroll.scroll(ui.scroll.get());
-                        scroll.set_bound(inner);
 
-                        // Update offset
-                        ui.scroll.set(scroll.get_scroll());
+                        if inner.width > 0 {
+                            scroll.set_bound(inner);
 
-                        scroll.render(&mut f, inner);
+                            // Update offset
+                            ui.scroll.set(scroll.get_scroll());
+
+                            scroll.render(&mut f, inner);
+                        }
 
                         if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
                             scroll.scroll_into_view(index);
