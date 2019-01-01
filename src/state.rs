@@ -536,7 +536,7 @@ pub enum PendingUIEvent {
 #[derive(Clone)]
 pub enum LongCommand {
     Absent,
-    Tab,
+    Graphical,
     Command(String),
     Toggle,
 
@@ -557,7 +557,7 @@ impl LongCommand {
     pub fn prompt(&self) -> Option<String> {
         match self {
             LongCommand::Absent => None,
-            LongCommand::Tab => Some("g".to_string()),
+            LongCommand::Graphical => Some("g".to_string()),
             LongCommand::Command(ref inner) => Some(format!(":{}", inner)),
             LongCommand::Toggle => Some("t".to_string()),
             LongCommand::EditRating(_, _, r) => Some(format!("评分 (1-10, 0=取消): {}", r)),
@@ -744,7 +744,7 @@ impl UIState {
             }
 
             match self.command {
-                LongCommand::Tab => {
+                LongCommand::Graphical => {
                     match ev {
                         UIEvent::Key(Key::Char('t')) => {
                             self.rotate_tab();
@@ -753,6 +753,24 @@ impl UIState {
                         }
                         UIEvent::Key(Key::Char('T')) => {
                             self.rotate_tab_rev();
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(Key::Char('g')) => {
+                            match self.active_tab_mut() {
+                                Tab::Collection => {
+                                    self.scroll.set(0);
+                                    self.focus.set(Some(0));
+                                }
+                                Tab::Subject{ ref mut scroll, .. } => {
+                                    scroll.set(0);
+                                }
+                                Tab::SearchResult{ ref mut scroll, ref mut focus, .. } => {
+                                    scroll.set(0);
+                                    focus.set(Some(0));
+                                }
+                                _ => {}
+                            }
                             self.command = LongCommand::Absent;
                             return self;
                         }
@@ -1075,7 +1093,22 @@ impl UIState {
             }
 
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
-            UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,
+            UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Graphical,
+            UIEvent::Key(Key::Char('G')) => 
+                match self.active_tab_mut() {
+                    Tab::Collection => {
+                        self.scroll.set(std::u16::MAX - 1000);
+                        self.focus.set(Some(std::usize::MAX));
+                    }
+                    Tab::Subject{ ref mut scroll, .. } => {
+                        scroll.set(std::u16::MAX - 1000);
+                    }
+                    Tab::SearchResult{ ref mut scroll, ref mut focus, .. } => {
+                        scroll.set(std::u16::MAX - 1000);
+                        focus.set(Some(std::usize::MAX));
+                    }
+                    _ => {}
+                }
             UIEvent::Key(Key::Char(':')) => self.command = LongCommand::Command(String::new()),
             UIEvent::Key(Key::Char('?')) | UIEvent::Key(Key::Char('h')) => self.help = !self.help,
             UIEvent::Mouse(m) => match m {
