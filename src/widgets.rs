@@ -347,38 +347,43 @@ pub enum ViewingEntryEvent {
 
 pub struct ViewingEntry<'a> {
     coll: &'a CollectionEntry,
-    text: CJKText<'a>,
-    progress: Option<ViewProgress>,
-
     selected: bool,
 }
 
 impl<'a> ViewingEntry<'a> {
-    pub fn new(ent: &'a CollectionEntry) -> Self {
-        let mut text = CJKText::raw([
-            (ent.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
-            ("\n", Style::default()),
-            (ent.subject.name.as_str(), Style::default().fg(Color::Yellow)),
-            ("\n", Style::default()),
-            (ent.subject.name_cn.as_str(), Style::default()),
-        ].to_vec());
-
-        let progress = match ent.subject.subject_type {
+    pub fn progress(&self) -> Option<ViewProgress> {
+        match self.coll.subject.subject_type {
             SubjectType::Book => Some(ViewProgress::new(
-                ent.subject.vols_count,
-                ent.vol_status,
+                self.coll.subject.vols_count,
+                self.coll.vol_status,
             )),
             _ => Some(ViewProgress::new(
-                ent.subject.eps_count,
-                ent.ep_status,
+                self.coll.subject.eps_count,
+                self.coll.ep_status,
             )),
-        };
+        }
+    }
 
+    pub fn apply_text<R, F>(&'a self, cb: F) -> R 
+        where for<'b> F: FnOnce(CJKText<'b>) -> R {
+            let id = self.coll.subject.id.to_string();
+
+            let text = CJKText::raw([
+                (self.coll.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
+                (" ", Style::default()),
+                (&id, Style::default()),
+                ("\n", Style::default()),
+                (self.coll.subject.name.as_str(), Style::default().fg(Color::Yellow)),
+                ("\n", Style::default()),
+                (self.coll.subject.name_cn.as_str(), Style::default().fg(Color::White)),
+            ].to_vec());
+
+            cb(text)
+        }
+
+    pub fn new(ent: &'a CollectionEntry) -> Self {
         Self {
             coll: ent,
-            text,
-            progress,
-
             selected: false,
         }
     }
@@ -400,13 +405,13 @@ impl<'a> Widget for ViewingEntry<'a> {
 
         b.draw(area, buf);
         let inner = b.inner(area);
-        self.text.draw(inner, buf);
 
-        let occupied_height = self.text.height(inner.width);
+        let occupied_height = self.apply_text(|mut text| {
+            text.draw(inner, buf);
+            text.height(inner.width)
+        }) + 1;
 
-        if let Some(ref mut progress) = self.progress {
-            let occupied_height = self.text.height(inner.width) + 1;
-
+        if let Some(ref mut progress) = self.progress() {
             let new_area = Rect::new(
                 inner.x,
                 inner.y + occupied_height,
@@ -420,9 +425,9 @@ impl<'a> Widget for ViewingEntry<'a> {
 
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
-        2 + self.text.height(width - 2)
+        2 + self.apply_text(|t| t.height(width - 2))
             + self
-                .progress
+                .progress()
                 .as_ref()
                 .map(|p| p.height(width - 2) + 1)
                 .unwrap_or(0)
@@ -627,7 +632,7 @@ impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
     }
 }
 
-struct ViewProgress {
+pub struct ViewProgress {
     total: Option<u64>,
     current: u64,
 }
