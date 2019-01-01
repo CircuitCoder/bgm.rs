@@ -67,7 +67,7 @@ pub const SEARCH_PAGING: usize = 10;
 struct AppStateInner {
     notifier: Sender<()>,
 
-    collections: InnerState<(), Vec<CollectionEntry>>,
+    collection: InnerState<(), Vec<CollectionEntry>>,
     collection_detail: HashMap<u64, InnerState<(), Option<CollectionDetail>>>,
     subject: HashMap<u64, InnerState<(), SubjectSmall>>,
     search: HashMap<(String, usize), InnerState<(), ShallowSearchResult>>,
@@ -92,7 +92,7 @@ impl AppState {
 
             inner: Arc::new(Mutex::new(AppStateInner {
                 notifier,
-                collections: InnerState::Discarded,
+                collection: InnerState::Discarded,
                 collection_detail: HashMap::new(),
                 subject: HashMap::new(),
                 search: HashMap::new(),
@@ -108,14 +108,14 @@ impl AppState {
     pub fn fetch_collection(&mut self) -> FetchResult<Vec<CollectionEntry>> {
         let mut guard = self.inner.lock().unwrap();
         if self.fetching_collection {
-            match guard.collections {
+            match guard.collection {
                 InnerState::Fetched(_, ref entries) =>
                     return FetchResult::Direct(entries.clone()),
                 InnerState::Fetching(_) =>
                     return FetchResult::Deferred,
                 _ => {
                     // Else: discarded, restart fetch
-                    guard.collections = InnerState::Fetching(());
+                    guard.collection = InnerState::Fetching(());
                 }
             }
         }
@@ -133,7 +133,7 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                inner.collections = InnerState::Fetched((), resp);
+                inner.collection = InnerState::Fetched((), resp);
                 inner.messages.push("收藏加载完成！".to_string());
                 inner
                     .notifier
@@ -160,7 +160,7 @@ impl AppState {
             .map(move |_| {
                 let mut inner = handle.lock().unwrap();
 
-                inner.collections = InnerState::Discarded;
+                inner.collection = InnerState::Discarded;
                 inner
                     .notifier
                     .send(())
@@ -370,6 +370,22 @@ impl AppState {
 
         FetchResult::Deferred
     }
+
+    pub fn refresh_collection(&mut self) {
+        self.inner.lock().unwrap().collection = InnerState::Discarded;
+    }
+
+    pub fn refresh_search(&mut self, search: String, index: usize) {
+        self.inner.lock().unwrap().search.entry((search, index)).and_modify(|s| *s = InnerState::Discarded);
+    }
+
+    pub fn refresh_subject(&mut self, id: u64) {
+        self.inner.lock().unwrap().subject.entry(id).and_modify(|s| *s = InnerState::Discarded);
+    }
+
+    pub fn refresh_collection_detail(&mut self, id: u64) {
+        self.inner.lock().unwrap().collection_detail.entry(id).and_modify(|s| *s = InnerState::Discarded);
+    }
 }
 
 pub const SELECTS: [SubjectType; 3] = [
@@ -577,6 +593,8 @@ impl LongCommand {
 pub struct UIState {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) tab: usize,
+
+    // TODO: move to the collection tab
     pub(crate) filters: [bool; SELECTS.len()],
     pub(crate) scroll: ScrollState,
     pub(crate) focus: FocusState,
@@ -1113,6 +1131,20 @@ impl UIState {
                     Tab::SearchResult{ ref mut scroll, ref mut focus, .. } => {
                         scroll.set(std::u16::MAX - 1000);
                         focus.set(Some(std::usize::MAX));
+                    }
+                    _ => {}
+                }
+            UIEvent::Key(Key::Char('R')) => 
+                match self.active_tab_mut() {
+                    Tab::Collection => {
+                        app.refresh_collection();
+                    }
+                    Tab::Subject{ id, .. } => {
+                        app.refresh_subject(*id);
+                        app.refresh_collection_detail(*id);
+                    }
+                    Tab::SearchResult{ ref search, index, .. } => {
+                        app.refresh_search(search.clone(), *index);
                     }
                     _ => {}
                 }
