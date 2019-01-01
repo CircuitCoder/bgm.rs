@@ -4,6 +4,7 @@ use reqwest::r#async as req;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use url::form_urlencoded;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct User {
@@ -131,8 +132,8 @@ pub struct CollectionDetail {
 
 #[derive(Serialize)]
 struct ProgressPayload {
-    watched_eps: String,
-    watched_vols: Option<String>,
+    pub watched_eps: String,
+    pub watched_vols: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -162,6 +163,22 @@ impl ClientAuthBearer for req::RequestBuilder {
             )
         } else {
             self
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct SearchResult {
+    #[serde(rename = "results")]
+    pub count: usize,
+    pub list: Vec<SubjectSmall>,
+}
+
+impl Default for SearchResult {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            list: Vec::new(),
         }
     }
 }
@@ -287,6 +304,27 @@ impl Client {
         .form(&payload)
         .send()
         .map(|_| ()) // TODO: handle response
+        .map_err(|e| e.into())
+    }
+
+    pub fn search(&self, keywords: &str) -> impl Future<Item = SearchResult, Error = failure::Error> {
+        let keywords = itertools::join(form_urlencoded::byte_serialize(keywords.as_bytes()), "");
+
+        let c = req::Client::new();
+        c.get(&format!(
+            "{}/search/subject/{}",
+            API_ROOT!(),
+            keywords
+        ))
+        .apply_auth(self)
+        .send()
+        .and_then(|mut resp| resp.json())
+        .map(|resp: APIResp<SearchResult>| {
+            match resp {
+                APIResp::Success(r) => r,
+                APIResp::Error{ .. } => SearchResult::default(),
+            }
+        })
         .map_err(|e| e.into())
     }
 }

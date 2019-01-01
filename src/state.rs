@@ -51,12 +51,19 @@ impl<T> Into<Option<T>> for FetchResult<T> {
     }
 }
 
+#[derive(Clone)]
+pub struct ShallowSearchResult {
+    count: usize,
+    ids: Vec<u64>,
+}
+
 struct AppStateInner {
     notifier: Sender<()>,
 
     collections: InnerState<(), Vec<CollectionEntry>>,
     collection_detail: HashMap<u64, InnerState<(), Option<CollectionDetail>>>,
     subject: HashMap<u64, InnerState<(), SubjectSmall>>,
+    search: HashMap<String, InnerState<(), ShallowSearchResult>>,
 
     messages: Vec<String>,
 }
@@ -81,6 +88,7 @@ impl AppState {
                 collections: InnerState::Discarded,
                 collection_detail: HashMap::new(),
                 subject: HashMap::new(),
+                search: HashMap::new(),
                 messages: ["Loading bgmTTY...".to_string()].to_vec(),
             })),
 
@@ -273,6 +281,60 @@ impl AppState {
 
         FetchResult::Deferred
     }
+
+    pub fn fetch_search(&mut self, search: &str) -> FetchResult<ShallowSearchResult> {
+        let mut guard = self.inner.lock().unwrap();
+        let entry = guard.search.entry(search.to_string());
+        match entry {
+            hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
+            hash_map::Entry::Occupied(mut entry) =>
+                match entry.get_mut() {
+                    InnerState::Fetched(_, ref result) =>
+                        return FetchResult::Direct(result.clone()),
+                    InnerState::Fetching(_) =>
+                        return FetchResult::Deferred,
+                    value => {
+                        // Else: discarded or fetching another, restart fetch
+                        *value = InnerState::Fetching(());
+                    }
+                }
+        }
+
+        guard.messages.push(format!("搜索中: {}...", search));
+        guard.notifier.send(()).unwrap();
+        drop(guard);
+
+        let fut = self.client.search(search);
+        let handle = self.inner.clone();
+
+        let search = search.to_string();
+
+        let fut = fut
+            .map(move |resp| {
+                let mut inner = handle.lock().unwrap();
+
+                let mut ids = Vec::with_capacity(resp.list.len());
+                let count = resp.count;
+
+                for subject in resp.list.into_iter() {
+                    ids.push(subject.id);
+                    inner.subject.insert(subject.id, InnerState::Fetched((), subject));
+                }
+
+                inner.search.insert(search, InnerState::Fetched((), ShallowSearchResult{ count, ids }));
+
+                inner.messages.push("搜索完成！".to_string());
+                inner
+                    .notifier
+                    .send(())
+                    .expect("Unable to notify the main thread");
+            })
+            .map_err(|e| println!("{}", e));
+
+        self.rt.spawn(fut);
+
+        FetchResult::Deferred
+    }
 }
 
 pub const SELECTS: [SubjectType; 3] = [
@@ -310,10 +372,18 @@ impl ScrollState {
 #[derive(Clone)]
 pub enum Tab {
     Collection,
-    Search,
+
+    Search{
+        text: String,
+    },
 
     Subject{
         id: u64,
+        scroll: ScrollState,
+    },
+
+    SearchResult{
+        search: String,
         scroll: ScrollState,
     },
 }
@@ -322,8 +392,16 @@ impl Tab {
     pub fn disp(&self, app: &AppState) -> String {
         match self {
             Tab::Collection => "格子".to_string(),
-            Tab::Search => "搜索".to_string(),
+            Tab::Search{ .. } => "搜索".to_string(),
             Tab::Subject{ id, .. } => format!("条目: {}", id),
+            Tab::SearchResult{ search, .. } => format!("搜索: {}", search),
+        }
+    }
+
+    pub fn is_search(&self) -> bool {
+        match self {
+            Tab::Search{ .. }=> true,
+            _ => false,
         }
     }
 
@@ -372,6 +450,8 @@ pub enum LongCommand {
 
     EditRating(u64, CollectionDetail, String),
     EditStatus(u64, Option<CollectionDetail>, CollectionStatus),
+
+    SearchInput(String),
 }
 
 impl LongCommand {
@@ -390,6 +470,7 @@ impl LongCommand {
             LongCommand::Toggle => Some("t".to_string()),
             LongCommand::EditRating(_, _, r) => Some(format!("评分 (1-10, 0=取消): {}", r)),
             LongCommand::EditStatus(_, _, s) => Some(format!("状态: {} [Tab]", s.disp())),
+            LongCommand::SearchInput(ref inner) => Some(format!("搜索: {}", inner)),
         }
     }
 }
@@ -418,7 +499,7 @@ impl UIState {
         UIState {
             tabs: [
                 Tab::Collection,
-                Tab::Search,
+                Tab::Search{ text: String::new() },
             ].to_vec(),
             tab: 0,
             filters: [true; SELECTS.len()],
@@ -573,6 +654,7 @@ impl UIState {
     pub fn reduce(&mut self, ev: UIEvent, app: &mut AppState) -> &mut Self {
         use termion::event::{Key, MouseEvent};
 
+        // Second: match long command input
         if self.command.present() {
             if ev == UIEvent::Key(Key::Esc) {
                 self.command = LongCommand::Absent;
@@ -607,7 +689,7 @@ impl UIState {
                                 "qa" => self.pending = Some(PendingUIEvent::Quit),
                                 "q" => self.close_tab(self.tab),
                                 "help" => self.help = !self.help,
-                                "tabe search" => self.tab = self.open_tab(Tab::Search, None),
+                                "tabe search" => self.tab = self.open_tab(Tab::Search{ text: String::new() }, None),
                                 "tabe coll" => self.tab = self.open_tab(Tab::Collection, None),
                                 ref e if e.starts_with("tabm ") => {
                                     let index = e[5..].parse::<usize>();
@@ -675,10 +757,7 @@ impl UIState {
                             return self;
                         }
                         UIEvent::Key(Key::Backspace) => {
-                            if rating.pop().is_none() {
-                                self.command = LongCommand::Absent;
-                            }
-
+                            rating.pop();
                             return self;
                         }
                         UIEvent::Key(Key::Char(c @ '0'...'9')) => {
@@ -710,6 +789,29 @@ impl UIState {
                             self.command = LongCommand::Absent;
                             return self;
                         }
+                        _ => {}
+                    }
+                }
+
+                LongCommand::SearchInput(ref mut staging) => {
+                    match ev {
+                        UIEvent::Key(Key::Char('\n')) => {
+                            let cloned = staging.to_string();
+                            if let Tab::Search{ ref mut text } = self.active_tab_mut() {
+                                *text = cloned;
+                            }
+                            self.command = LongCommand::Absent;
+                            return self;
+                        }
+                        UIEvent::Key(Key::Backspace) => {
+                            staging.pop();
+                            return self;
+                        }
+                        UIEvent::Key(Key::Char(c)) => {
+                            staging.push(c);
+                            return self
+                        }
+                        UIEvent::Key(_) => return self,
                         _ => {}
                     }
                 }
@@ -810,6 +912,12 @@ impl UIState {
             }
 
             UIEvent::Key(Key::Esc) if self.active_tab().is_subject() => self.close_tab(self.tab),
+
+            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_search() => {
+                if let Tab::Search { ref text } = self.active_tab() {
+                    self.command = LongCommand::SearchInput(text.clone());
+                }
+            }
 
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,

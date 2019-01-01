@@ -1,4 +1,4 @@
-use bgmtv::client::{CollectionEntry, SubjectType};
+use bgmtv::client::{CollectionEntry, SubjectType, SubjectSmall};
 use termion::event::MouseButton;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
@@ -346,44 +346,56 @@ pub enum ViewingEntryEvent {
 }
 
 pub struct ViewingEntry<'a> {
-    coll: &'a CollectionEntry,
+    subject: &'a SubjectSmall,
+    coll: Option<&'a CollectionEntry>,
     selected: bool,
 }
 
 impl<'a> ViewingEntry<'a> {
     pub fn progress(&self) -> Option<ViewProgress> {
-        match self.coll.subject.subject_type {
-            SubjectType::Book => Some(ViewProgress::new(
-                self.coll.subject.vols_count,
-                self.coll.vol_status,
-            )),
-            _ => Some(ViewProgress::new(
-                self.coll.subject.eps_count,
-                self.coll.ep_status,
-            )),
-        }
+        self.coll.map(|coll| {
+            match self.subject.subject_type {
+                SubjectType::Book => ViewProgress::new(
+                    self.subject.vols_count,
+                    coll.vol_status,
+                ),
+                _ => ViewProgress::new(
+                    self.subject.eps_count,
+                    coll.ep_status,
+                ),
+            }
+        })
     }
 
     pub fn apply_text<R, F>(&'a self, cb: F) -> R 
         where for<'b> F: FnOnce(CJKText<'b>) -> R {
-            let id = self.coll.subject.id.to_string();
+            let id = self.subject.id.to_string();
 
             let text = CJKText::raw([
-                (self.coll.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
+                (self.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
                 (" ", Style::default()),
                 (&id, Style::default()),
                 ("\n", Style::default()),
-                (self.coll.subject.name.as_str(), Style::default().fg(Color::Yellow)),
+                (self.subject.name.as_str(), Style::default().fg(Color::Yellow)),
                 ("\n", Style::default()),
-                (self.coll.subject.name_cn.as_str(), Style::default().fg(Color::White)),
+                (self.subject.name_cn.as_str(), Style::default().fg(Color::White)),
             ].to_vec());
 
             cb(text)
         }
 
-    pub fn new(ent: &'a CollectionEntry) -> Self {
+    pub fn with_coll(ent: &'a CollectionEntry) -> Self {
         Self {
-            coll: ent,
+            subject: &ent.subject,
+            coll: Some(ent),
+            selected: false,
+        }
+    }
+
+    pub fn with_subject(sub: &'a SubjectSmall) -> Self {
+        Self {
+            subject: sub,
+            coll: None,
             selected: false,
         }
     }

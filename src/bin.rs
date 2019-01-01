@@ -258,6 +258,7 @@ trait RectExt {
     fn contains(&self, x: u16, y: u16) -> bool;
     fn padding_hoz(self, p: u16) -> Self;
     fn padding_left(self, p: u16) -> Self;
+    fn center(&self, width: u16, height: u16) -> Self;
 }
 
 impl RectExt for tui::layout::Rect {
@@ -283,6 +284,20 @@ impl RectExt for tui::layout::Rect {
             self.width = 0;
         }
         self
+    }
+
+    fn center(&self, mut width: u16, mut height: u16) -> Self {
+        if width > self.width {
+            width = self.width;
+        }
+        if height > self.height {
+            height = self.height;
+        }
+
+        let left = (self.width - width) / 2;
+        let top = (self.height - height) / 2;
+
+        Self::new(left + self.x, top + self.y, width, height)
     }
 }
 
@@ -506,7 +521,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         let collection = Some(collection);
                         let mut ents = ui
                             .do_filter(&collection)
-                            .map(ViewingEntry::new)
+                            .map(ViewingEntry::with_coll)
                             .collect::<Vec<_>>();
 
                         if let Some(i) = ui.focus {
@@ -566,8 +581,21 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             .render(&mut f, region);
                     };
                 }
-                Tab::Search => {
-                    CJKText::new("还没写呢 ฅ^•ﻌ•^ฅ!").render(&mut f, chunks[1].padding_hoz(2));
+                Tab::Search{ ref text } => {
+                    let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
+                    block.render(&mut f, chunks[1]);
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y-1, 1, 1));
+                    let inner = block.inner(chunks[1]);
+
+                    let input = inner.center(inner.width - 2, 5);
+                    let mut input_block = Block::default().borders(Borders::ALL);
+                    input_block.render(&mut f, input);
+                    let input_inner = input_block.inner(input).inner(1);
+
+                    let mut text = CJKText::new(text);
+                    text.set_style(tui::style::Style::default().fg(tui::style::Color::White));
+                    text.render(&mut f, input_inner);
                 }
                 Tab::Subject{ id, scroll: ref mut scroll_val } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
@@ -580,6 +608,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     let detail = app.fetch_collection_detail(*id);
                     let subject = app.fetch_subject(*id);
+
                     match detail + subject {
                         FetchResult::Deferred => {
                             let text = format!("猫咪检索中... ID: {}", id);
@@ -599,16 +628,24 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             scroll.push(&mut subject_text);
 
+                            let status;
+                            let score;
+                            let tag;
+                            let mut detail_cont;
+                            let mut detail_text;
+                            let mut comment;
+
                             if let Some(detail) = detail {
-                                let status = detail.status.disp();
-                                let score = if detail.rating == 0 {
+                                detail_cont = detail;
+                                status = detail_cont.status.disp();
+                                score = if detail_cont.rating == 0 {
                                     "未评分".to_string()
                                 } else {
-                                    format!("{} / 10", detail.rating)
+                                    format!("{} / 10", detail_cont.rating)
                                 };
-                                let tag = detail.tag.join(",");
+                                tag = detail_cont.tag.join(",");
 
-                                let mut detail_text = CJKText::raw([
+                                detail_text = CJKText::raw([
                                     ("状态: ", Style::default().fg(Color::Blue)),
                                     (status, Style::default()),
 
@@ -626,71 +663,47 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     ("评论: ", Style::default().fg(Color::Blue)),
                                 ].to_vec());
 
-                                let mut comment = CJKText::new(&detail.comment);
+                                comment = CJKText::new(&detail_cont.comment);
 
                                 scroll.push(&mut detail_text);
                                 scroll.push(&mut comment);
-
-                                let mut scroll = scroll.scroll(scroll_val.get());
-                                scroll.set_bound(inner);
-                                scroll_val.set(scroll.get_scroll());
-
-                                scroll.set_bound(inner);
-                                scroll.render(&mut f, inner);
-
-                                if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
-                                    if inner.contains(x, y) {
-                                        match scroll.intercept(x, y, btn) {
-                                            Some(ScrollEvent::ScrollTo(pos)) => {
-                                                scroll_val.set(pos);
-                                            }
-                                            Some(ScrollEvent::ScrollUp) => {
-                                                scroll_val.delta(-1);
-                                            }
-                                            Some(ScrollEvent::ScrollDown) => {
-                                                scroll_val.delta(1);
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
                             } else {
-                                let mut status_text = CJKText::raw([
+                                detail_text = CJKText::raw([
                                     ("状态: ", Style::default().fg(Color::Blue)),
                                     ("没打算", Style::default()),
                                 ].to_vec());
 
-                                scroll.push(&mut status_text);
+                                scroll.push(&mut detail_text);
+                            }
 
-                                let mut scroll = scroll.scroll(scroll_val.get());
-                                scroll.set_bound(inner);
-                                scroll_val.set(scroll.get_scroll());
+                            let mut scroll = scroll.scroll(scroll_val.get());
+                            scroll.set_bound(inner);
+                            scroll_val.set(scroll.get_scroll());
 
-                                scroll.set_bound(inner);
-                                scroll.render(&mut f, inner);
+                            scroll.set_bound(inner);
+                            scroll.render(&mut f, inner);
 
-                                if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
-                                    if inner.contains(x, y) {
-                                        match scroll.intercept(x, y, btn) {
-                                            Some(ScrollEvent::ScrollTo(pos)) => {
-                                                scroll_val.set(pos);
-                                            }
-                                            Some(ScrollEvent::ScrollUp) => {
-                                                scroll_val.delta(-1);
-                                            }
-                                            Some(ScrollEvent::ScrollDown) => {
-                                                scroll_val.delta(1);
-                                            }
-                                            _ => {}
+                            if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
+                                if inner.contains(x, y) {
+                                    match scroll.intercept(x, y, btn) {
+                                        Some(ScrollEvent::ScrollTo(pos)) => {
+                                            scroll_val.set(pos);
                                         }
+                                        Some(ScrollEvent::ScrollUp) => {
+                                            scroll_val.delta(-1);
+                                        }
+                                        Some(ScrollEvent::ScrollDown) => {
+                                            scroll_val.delta(1);
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
-
-                            // TODO: intercept
                         }
                     }
                 }
+
+                Tab::SearchResult{ .. } => {}
             }
         })?;
 
