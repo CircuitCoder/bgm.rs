@@ -915,6 +915,16 @@ impl UIState {
 
             UIEvent::Key(Key::Char('\n')) if self.active_tab().is_search() => {
                 if let Tab::Search { ref text } = self.active_tab() {
+                    if text == "" {
+                        self.command = LongCommand::SearchInput(String::new());
+                    } else {
+                        self.tab = self.open_tab(Tab::SearchResult{ search: text.clone(), scroll: Default::default() }, None);
+                    }
+                }
+            }
+
+            UIEvent::Key(Key::Char('e')) if self.active_tab().is_search() => {
+                if let Tab::Search { ref text } = self.active_tab() {
                     self.command = LongCommand::SearchInput(text.clone());
                 }
             }
