@@ -402,6 +402,7 @@ impl<'a> Intercept<ViewingEntryEvent> for ViewingEntry<'a> {
 
 pub enum TabberEvent {
     Select(usize),
+    Close(usize),
 }
 
 pub struct Tabber<'a> {
@@ -455,7 +456,7 @@ impl<'a> Widget for Tabber<'a> {
 }
 
 impl<'a> Intercept<TabberEvent> for Tabber<'a> {
-    fn intercept(&mut self, x: u16, _: u16, _: MouseButton) -> Option<TabberEvent> {
+    fn intercept(&mut self, x: u16, _: u16, btn: MouseButton) -> Option<TabberEvent> {
         let dx = x - self.bound.x;
         let mut counter = 0;
 
@@ -466,7 +467,15 @@ impl<'a> Intercept<TabberEvent> for Tabber<'a> {
             counter += width + 2;
 
             if counter > dx {
-                return Some(TabberEvent::Select(i));
+                match btn {
+                    MouseButton::Left => {
+                        return Some(TabberEvent::Select(i));
+                    },
+                    MouseButton::Middle => {
+                        return Some(TabberEvent::Close(i));
+                    }
+                    _ => {}
+                }
             }
         }
 

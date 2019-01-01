@@ -406,6 +406,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 if tab_inner.contains(x, y) {
                     match tabber.intercept(x, y, btn) {
                         Some(TabberEvent::Select(i)) => ui.select_tab(i),
+                        Some(TabberEvent::Close(i)) => ui.close_tab(i),
                         _ => {}
                     }
                 }

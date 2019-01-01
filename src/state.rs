@@ -447,6 +447,16 @@ impl UIState {
         self.tabs.len() - 1
     }
 
+    pub fn close_tab(&mut self, index: usize) {
+        if index < self.tabs.len() && !self.tabs[index].persistent() {
+            if self.tab == self.tabs.len() - 1 {
+                self.tab -= 1;
+            }
+
+            self.tabs.remove(index);
+        }
+    }
+
     pub fn active_tab(&self) -> &Tab {
         // This really should not break
         self.tabs.get(self.tab).unwrap()
@@ -540,7 +550,8 @@ impl UIState {
                     match ev {
                         UIEvent::Key(Key::Char('\n')) => {
                             match cmd as &str {
-                                "q" => self.pending = Some(PendingUIEvent::Quit),
+                                "qa" => self.pending = Some(PendingUIEvent::Quit),
+                                "q" => self.close_tab(self.tab),
                                 "help" => self.help = !self.help,
                                 _ => app.publish_message("是不认识的命令!".to_string()),
                             }
@@ -673,7 +684,7 @@ impl UIState {
             UIEvent::Key(Key::Char('t')) if self.active_tab().is_collection() => {
                 self.command = LongCommand::Toggle;
             }
-            UIEvent::Key(Key::Char('+')) if self.focus.is_some() => {
+            UIEvent::Key(Key::Char('+')) if self.active_tab().is_collection() && self.focus.is_some() => {
                 let focus = self.focus.unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
@@ -687,7 +698,7 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('-')) if self.focus.is_some() => {
+            UIEvent::Key(Key::Char('-')) if self.active_tab().is_collection() && self.focus.is_some() => {
                 let focus = self.focus.unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
@@ -701,8 +712,8 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('\n')) if self.focus.is_some() => self.goto_detail(self.focus.unwrap(), app),
-            UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
+            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_collection() && self.focus.is_some() => self.goto_detail(self.focus.unwrap(), app),
+            UIEvent::Key(Key::Esc) if self.active_tab().is_collection() && self.focus.is_some() => self.focus = None,
 
             UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
                 let id = self.active_tab().subject_id().unwrap();
@@ -735,6 +746,8 @@ impl UIState {
                     }
                 }
             }
+
+            UIEvent::Key(Key::Esc) if self.active_tab().is_subject() => self.close_tab(self.tab),
 
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,

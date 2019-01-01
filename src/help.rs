@@ -40,10 +40,10 @@ fn is_collection(ui: &UIState) -> bool {
     ui.active_tab().is_collection()
 }
 
-pub const HELP_DATABASE: [HelpEntry; 17] = [
+pub const HELP_DATABASE: [HelpEntry; 18] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
-    HelpEntry(&[":q", "C-q"], "Rage quit", &|_| true),
+    HelpEntry(&[":qa", "C-q"], "Rage quit", &|_| true),
 
     // Tabs
     HelpEntry(&["gt", "Tab"], "下一个 Tab", &|_| true),
@@ -59,13 +59,14 @@ pub const HELP_DATABASE: [HelpEntry; 17] = [
     HelpEntry(&["+"], "增加进度", &|ui| is_collection(ui) && ui.focus.is_some()),
     HelpEntry(&["-"], "减少进度", &|ui| is_collection(ui) && ui.focus.is_some()),
     HelpEntry(&["Enter"], "详情/编辑", &|ui| is_collection(ui) && ui.focus.is_some()),
-    HelpEntry(&["Esc"], "取消选择", &|ui| is_collection(ui) && ui.focus.is_some()),
+    HelpEntry(&["Esc"], "取消选择", &|ui| is_collection(ui) && ui.focus.is_some() && !ui.command.present()),
 
     // When in subject page
     HelpEntry(&["s"], "修改收藏状态", &is_subject),
     HelpEntry(&["r"], "修改评分", &is_subject),
     HelpEntry(&["t"], "修改标签", &is_subject),
     HelpEntry(&["c"], "修改评论", &is_subject),
+    HelpEntry(&["Esc", ":q"], "关闭标签", &|ui| is_subject(ui) && !ui.command.present()),
 
     // Long command
     HelpEntry(&["Esc"], "取消命令", &|ui| ui.command.present()),
