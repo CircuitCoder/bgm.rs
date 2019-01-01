@@ -590,6 +590,8 @@ impl LongCommand {
     }
 }
 
+const HELP_THRESHOLD: usize = 3;
+
 pub struct UIState {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) tab: usize,
@@ -608,6 +610,9 @@ pub struct UIState {
     stdin_lock: Arc<Mutex<()>>,
     last_click_interval: Option<Duration>,
     last_click: Option<(u16, u16, Instant)>,
+
+    last_input_meaningless: bool,
+    meaningless_count: usize,
 }
 
 impl UIState {
@@ -632,6 +637,9 @@ impl UIState {
             stdin_lock,
             last_click_interval: None,
             last_click: None,
+
+            last_input_meaningless: false,
+            meaningless_count: 0,
         }
     }
 
@@ -760,6 +768,14 @@ impl UIState {
 
     pub fn reduce(&mut self, ev: UIEvent, app: &mut AppState) -> &mut Self {
         use termion::event::{Key, MouseEvent};
+
+        if self.last_input_meaningless {
+            self.meaningless_count += 1;
+        } else {
+            self.meaningless_count = 0;
+        }
+
+        self.last_input_meaningless = false;
 
         // Second: match long command input
         if self.command.present() {
@@ -1167,7 +1183,9 @@ impl UIState {
                 _ => {}
             },
 
-            _ => {}
+            _ => {
+                self.last_input_meaningless = true;
+            }
         }
 
         self
@@ -1208,6 +1226,10 @@ impl UIState {
         }
 
         self.tab = self.open_tab(Tab::Subject{ id, scroll: ScrollState::default() }, None);
+    }
+
+    pub fn needs_help(&self) -> bool {
+        self.meaningless_count + 2 > HELP_THRESHOLD
     }
 
     /**

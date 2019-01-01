@@ -375,7 +375,7 @@ impl<'a> ViewingEntry<'a> {
                 (self.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
                 (" ", Style::default()),
                 (&id, Style::default()),
-                ("\n", Style::default()),
+                ("\n\n", Style::default()),
                 (self.subject.name.as_str(), Style::default().fg(Color::Yellow)),
                 ("\n", Style::default()),
                 (self.subject.name_cn.as_str(), Style::default().fg(Color::White)),

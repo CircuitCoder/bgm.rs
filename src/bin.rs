@@ -453,7 +453,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                 }
             }
 
-            let status = ui.command.prompt().unwrap_or_else(|| app.last_message());
+            let needs_help = ui.needs_help();
+            let status = ui.command.prompt().unwrap_or_else(|| if needs_help {
+                "按 h 可以打开帮助哦".to_string()
+            } else { app.last_message() });
             let mut status_line = CJKText::new(&status);
             let status_inner = chunks[2].padding_hoz(1);
             status_line.render(&mut f, status_inner);
@@ -599,9 +602,14 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     input_block.render(&mut f, input);
                     let input_inner = input_block.inner(input).inner(1);
 
-                    let mut text = CJKText::new(text);
-                    text.set_style(tui::style::Style::default().fg(tui::style::Color::White));
-                    text.render(&mut f, input_inner);
+                    let mut text_comp = if text == "" {
+                        let mut text_comp = CJKText::new(text);
+                        text_comp.set_style(tui::style::Style::default().fg(tui::style::Color::White));
+                        text_comp
+                    } else {
+                        CJKText::new("按 e 或 Enter 开始输入，然后双击 Enter 搜索")
+                    };
+                    text_comp.render(&mut f, input_inner);
                 }
 
                 Tab::Subject{ id, scroll: ref mut scroll_val } => {
