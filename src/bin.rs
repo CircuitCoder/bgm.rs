@@ -678,7 +678,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                 } else {
                                     format!("{} / 10", detail_cont.rating)
                                 };
-                                tag = detail_cont.tag.join(",");
+                                tag = detail_cont.tag.join(", ");
 
                                 detail_text = CJKText::raw([
                                     ("状态: ", Style::default().fg(Color::Blue)),

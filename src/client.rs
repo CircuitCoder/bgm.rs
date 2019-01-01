@@ -256,7 +256,7 @@ impl Client {
         if let Some(content) = aux {
             payload.insert("rating", content.rating.to_string());
             payload.insert("comment", content.comment);
-            payload.insert("tag", content.tag.join(","));
+            payload.insert("tags", content.tag.join(","));
         }
 
         c.post(&format!(

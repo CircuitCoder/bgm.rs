@@ -1042,6 +1042,18 @@ impl UIState {
                 }
             }
 
+            UIEvent::Key(Key::Char('t')) if self.active_tab().is_subject() => {
+                let id = self.active_tab().subject_id().unwrap();
+                if let FetchResult::Direct(Some(mut coll)) = app.fetch_collection_detail(id) {
+                    let initial = coll.tag.join("\n");
+                    if let Ok(Some(content)) = self.edit(&initial) {
+                        let segs = content.lines().filter(|e| e.len() > 0).map(|e| e.to_string()).collect::<Vec<String>>();
+                        coll.tag = segs;
+                        app.update_collection_detail(id, coll.status.clone(), Some(coll));
+                    }
+                }
+            }
+
             UIEvent::Key(Key::Char('c')) if self.active_tab().is_subject() => {
                 let id = self.active_tab().subject_id().unwrap();
                 if let FetchResult::Direct(Some(mut coll)) = app.fetch_collection_detail(id) {
