@@ -102,7 +102,7 @@ impl Service for CodeService {
         };
 
         future::ok(Response::new(Body::from(
-            "<body onload=\"window.close()\"></body>",
+            "<body>You can close this page now</body>",
         )))
     }
 }
@@ -142,7 +142,7 @@ pub enum RequestCodeError {
 
 pub fn request_code(
     client_id: &str,
-) -> impl Future<Item = (String, String), Error = RequestCodeError> {
+) -> (String, impl Future<Item = (String, String), Error = RequestCodeError>) {
     let port = 8478;
 
     let (p, c) = oneshot::channel::<String>();
@@ -168,12 +168,13 @@ pub fn request_code(
         redirect.clone()
     );
 
-    println!("Goto {}", uri);
-
-    return recv
-        .map_err(|_| RequestCodeError::Channel)
-        .join(server)
-        .map(|(result, _)| (result.deref().clone(), redirect));
+    (
+        uri,
+        recv
+            .map_err(|_| RequestCodeError::Channel)
+            .join(server)
+            .map(|(result, _)| (result.deref().clone(), redirect))
+    )
 }
 
 fn fetch_code(payload: AuthPayload) -> impl Future<Item = AuthResp, Error = reqwest::Error> {

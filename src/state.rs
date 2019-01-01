@@ -127,6 +127,7 @@ impl AppState {
 
         let fut = self.client.collection(None);
         let handle = self.inner.clone();
+        let err_handle = self.inner.clone();
 
         let fut = fut
             .map(move |resp| {
@@ -139,7 +140,7 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(|e| println!("{}", e));
+            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
 
         self.rt.spawn(fut);
 
@@ -153,6 +154,7 @@ impl AppState {
 
         let fut = self.client.progress(coll, ep, vol);
         let handle = self.inner.clone();
+        let err_handle = self.inner.clone();
 
         let fut = fut
             .map(move |_| {
@@ -164,7 +166,8 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(|e| println!("{}", e));
+            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+
         self.rt.spawn(fut);
     }
 
@@ -202,6 +205,7 @@ impl AppState {
 
         let fut = self.client.collection_detail(id);
         let handle = self.inner.clone();
+        let err_handle = self.inner.clone();
 
         let fut = fut
             .map(move |resp| {
@@ -214,7 +218,7 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(|e| println!("{}", e));
+            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
 
         self.rt.spawn(fut);
 
@@ -229,6 +233,7 @@ impl AppState {
 
         let fut = self.client.update_collection_detail(id, status, original);
         let handle = self.inner.clone();
+        let err_handle = self.inner.clone();
 
         let fut = fut
             .map(move |resp| {
@@ -241,7 +246,7 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(|e| println!("{}", e));
+            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
 
         self.rt.spawn(fut);
     }
@@ -270,6 +275,7 @@ impl AppState {
 
         let fut = self.client.subject(id);
         let handle = self.inner.clone();
+        let err_handle = self.inner.clone();
 
         let fut = fut
             .map(move |resp| {
@@ -282,7 +288,7 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(|e| println!("{}", e));
+            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
 
         self.rt.spawn(fut);
 
@@ -334,6 +340,7 @@ impl AppState {
         let skip = index * SEARCH_PAGING;
         let fut = self.client.search(search, SEARCH_PAGING, skip);
         let handle = self.inner.clone();
+        let err_handle = self.inner.clone();
 
         let search = search.to_string();
 
@@ -357,7 +364,7 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(|e| println!("{}", e));
+            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
 
         self.rt.spawn(fut);
 

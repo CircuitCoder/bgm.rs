@@ -100,7 +100,11 @@ fn init_credentials() {
 fn new_auth(settings: Settings) -> Result<Settings, ()> {
     let set = settings.clone();
     let cred = set.cred().clone();
-    let fut = request_code(cred.get_client_id())
+    let (uri, fut) = request_code(cred.get_client_id());
+
+    println!("请在本机使用浏览器前往 {} 完成验证", uri);
+
+    let fut = fut
         .map_err(|e| println!("{:#?}", e))
         .and_then(|(code, redirect)| {
             request_token(cred, code, redirect.clone())
@@ -242,7 +246,7 @@ fn main() {
     let settings = if let Ok(s) = settings {
         s
     } else {
-        println!("{}", "Unalbe to authenticate!".red().bold());
+        println!("{}", "验证失败！可能是风把网线刮断了？".red().bold());
         std::process::exit(1);
     };
 
