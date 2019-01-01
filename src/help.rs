@@ -1,4 +1,4 @@
-use crate::state::{UIState, Tab};
+use crate::state::{UIState};
 use crate::widgets::CJKText;
 use tui::style::{Style,Modifier,Color};
 

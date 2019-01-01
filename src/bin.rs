@@ -61,7 +61,7 @@ fn init_credentials() {
         .flush()
         .expect("Could not flush stdout???");
     let id = lines.next();
-    print!("请输入您的 Client secret");
+    print!("请输入您的 Client secret: ");
     std::io::stdout()
         .flush()
         .expect("Could not flush stdout???");
@@ -198,20 +198,20 @@ fn main() {
             println!("{}", e);
             println!(
                 "{}",
-                "It seems that you are running bgmTTY for the first time, or"
+                "看上去这是您第一次使用 bgmTTY，或者"
                     .yellow()
                     .bold()
             );
             println!(
                 "{}",
-                "at least we cannot read your config file.\n"
+                "bgmTTY 没法打开配置文件。\n"
                     .yellow()
                     .bold()
             );
 
-            println!("Rerun bgmTTY with flag --init to create the config file, or");
+            println!("您可以带参数 --init 启动 bgmTTY 来创建一个新的配置文件，或者");
             println!(
-                "get a copy from your previous computer and put it to {}",
+                "将已有的配置文件放到 {}",
                 default_path().as_ref().to_str().unwrap()
             );
             std::process::exit(1);
@@ -630,7 +630,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         }
                     }
                 }
-                _ => {}
             }
         })?;
 

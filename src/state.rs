@@ -6,6 +6,8 @@ use crate::CollectionStatusExt;
 use std::io::{Read, Write};
 use std::ops::Deref;
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use std::collections::hash_map;
 
 #[derive(Clone)]
 pub enum FetchResult<T> {
@@ -53,8 +55,8 @@ struct AppStateInner {
     notifier: Sender<()>,
 
     collections: InnerState<(), Vec<CollectionEntry>>,
-    collection_detail: InnerState<u64, Option<CollectionDetail>>,
-    subject: InnerState<u64, SubjectSmall>,
+    collection_detail: HashMap<u64, InnerState<(), Option<CollectionDetail>>>,
+    subject: HashMap<u64, InnerState<(), SubjectSmall>>,
 
     messages: Vec<String>,
 }
@@ -77,8 +79,8 @@ impl AppState {
             inner: Arc::new(Mutex::new(AppStateInner {
                 notifier,
                 collections: InnerState::Discarded,
-                collection_detail: InnerState::Discarded,
-                subject: InnerState::Discarded,
+                collection_detail: HashMap::new(),
+                subject: HashMap::new(),
                 messages: ["Loading bgmTTY...".to_string()].to_vec(),
             })),
 
@@ -161,27 +163,22 @@ impl AppState {
         msgs[msgs.len()-1].clone()
     }
 
-    pub fn fetch_collection_detail_weak(&mut self) -> FetchResult<(u64, Option<CollectionDetail>)> {
-        let guard = self.inner.lock().unwrap();
-        match guard.collection_detail {
-            InnerState::Fetched(id, ref result) =>
-                FetchResult::Direct((id, result.clone())),
-            _ =>
-                FetchResult::Deferred,
-        }
-    }
-
     pub fn fetch_collection_detail(&mut self, id: u64) -> FetchResult<Option<CollectionDetail>> {
         let mut guard = self.inner.lock().unwrap();
-        match guard.collection_detail {
-            InnerState::Fetched(fetched, ref result) if id == fetched =>
-                return FetchResult::Direct(result.clone()),
-            InnerState::Fetching(fetching) if id == fetching =>
-                return FetchResult::Deferred,
-            _ => {
-                // Else: discarded or fetching another, restart fetch
-                guard.collection_detail = InnerState::Fetching(id);
-            }
+        let entry = guard.collection_detail.entry(id);
+        match entry {
+            hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
+            hash_map::Entry::Occupied(mut entry) =>
+                match entry.get_mut() {
+                    InnerState::Fetched(_, ref result) =>
+                        return FetchResult::Direct(result.clone()),
+                    InnerState::Fetching(_) =>
+                        return FetchResult::Deferred,
+                    value => {
+                        // Else: discarded or fetching another, restart fetch
+                        *value = InnerState::Fetching(());
+                    }
+                }
         }
 
         guard.messages.push("获取收藏状态...".to_string());
@@ -195,17 +192,12 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                match inner.collection_detail {
-                    InnerState::Fetching(fetching) if fetching == id => {
-                        inner.collection_detail = InnerState::Fetched(id, resp);
-                        inner.messages.push("收藏加载完成！".to_string());
-                        inner
-                            .notifier
-                            .send(())
-                            .expect("Unable to notify the main thread");
-                    }
-                    _ => {}
-                }
+                inner.collection_detail.insert(id, InnerState::Fetched((), resp));
+                inner.messages.push("收藏加载完成！".to_string());
+                inner
+                    .notifier
+                    .send(())
+                    .expect("Unable to notify the main thread");
             })
             .map_err(|e| println!("{}", e));
 
@@ -227,17 +219,12 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                match inner.collection_detail {
-                    InnerState::Fetching(oid) | InnerState::Fetched(oid, _) if oid == id => {
-                        inner.collection_detail = InnerState::Fetched(id, Some(resp));
-                        inner.messages.push("收藏更新完成！".to_string());
-                        inner
-                            .notifier
-                            .send(())
-                            .expect("Unable to notify the main thread");
-                    }
-                    _ => {}
-                }
+                inner.collection_detail.insert(id, InnerState::Fetched((), Some(resp)));
+                inner.messages.push("收藏更新完成！".to_string());
+                inner
+                    .notifier
+                    .send(())
+                    .expect("Unable to notify the main thread");
             })
             .map_err(|e| println!("{}", e));
 
@@ -246,15 +233,20 @@ impl AppState {
 
     pub fn fetch_subject(&mut self, id: u64) -> FetchResult<SubjectSmall> {
         let mut guard = self.inner.lock().unwrap();
-        match guard.subject {
-            InnerState::Fetched(fetched, ref result) if id == fetched =>
-                return FetchResult::Direct(result.clone()),
-            InnerState::Fetching(fetching) if id == fetching =>
-                return FetchResult::Deferred,
-            _ => {
-                // Else: discarded or fetching another, restart fetch
-                guard.subject = InnerState::Fetching(id);
-            }
+        let entry = guard.subject.entry(id);
+        match entry {
+            hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
+            hash_map::Entry::Occupied(mut entry) =>
+                match entry.get_mut() {
+                    InnerState::Fetched(_, ref result) =>
+                        return FetchResult::Direct(result.clone()),
+                    InnerState::Fetching(_) =>
+                        return FetchResult::Deferred,
+                    value => {
+                        // Else: discarded or fetching another, restart fetch
+                        *value = InnerState::Fetching(());
+                    }
+                }
         }
 
         guard.messages.push(format!("获取条目中: {}...", id));
@@ -268,17 +260,12 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                match inner.subject {
-                    InnerState::Fetching(fetching) if fetching == id => {
-                        inner.subject = InnerState::Fetched(id, resp);
-                        inner.messages.push("条目加载完成！".to_string());
-                        inner
-                            .notifier
-                            .send(())
-                            .expect("Unable to notify the main thread");
-                    }
-                    _ => {}
-                }
+                inner.subject.insert(id, InnerState::Fetched((), resp));
+                inner.messages.push("条目加载完成！".to_string());
+                inner
+                    .notifier
+                    .send(())
+                    .expect("Unable to notify the main thread");
             })
             .map_err(|e| println!("{}", e));
 
@@ -718,29 +705,32 @@ impl UIState {
             UIEvent::Key(Key::Esc) if self.focus.is_some() => self.focus = None,
 
             UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
-                if let FetchResult::Direct((_, coll)) = app.fetch_collection_detail_weak() {
+                let id = self.active_tab().subject_id().unwrap();
+                if let FetchResult::Direct(coll) = app.fetch_collection_detail(id) {
                     let initial = if let Some(ref coll) = coll {
                         coll.status.clone()
                     } else {
                         Default::default()
                     };
-                    self.command = LongCommand::EditStatus(self.active_tab().subject_id().unwrap(), coll, initial);
+                    self.command = LongCommand::EditStatus(id, coll, initial);
                 }
             }
 
             UIEvent::Key(Key::Char('r')) if self.active_tab().is_subject() => {
-                if let FetchResult::Direct((_, Some(coll))) = app.fetch_collection_detail_weak() {
+                let id = self.active_tab().subject_id().unwrap();
+                if let FetchResult::Direct(Some(coll)) = app.fetch_collection_detail(id) {
                     let rating = coll.rating.to_string();
-                    self.command = LongCommand::EditRating(self.active_tab().subject_id().unwrap(), coll, rating);
+                    self.command = LongCommand::EditRating(id, coll, rating);
                 }
             }
 
             UIEvent::Key(Key::Char('c')) if self.active_tab().is_subject() => {
-                if let FetchResult::Direct((_, Some(mut coll))) = app.fetch_collection_detail_weak() {
+                let id = self.active_tab().subject_id().unwrap();
+                if let FetchResult::Direct(Some(mut coll)) = app.fetch_collection_detail(id) {
                     if let Ok(Some(content)) = self.edit(&coll.comment) {
                         if content != coll.comment {
                             coll.comment = content;
-                            app.update_collection_detail(self.active_tab().subject_id().unwrap(), coll.status.clone(), Some(coll));
+                            app.update_collection_detail(id, coll.status.clone(), Some(coll));
                         }
                     }
                 }
