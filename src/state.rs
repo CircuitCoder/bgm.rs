@@ -57,6 +57,11 @@ pub struct ShallowSearchResult {
     ids: Vec<u64>,
 }
 
+pub struct PopulatedSearchResult {
+    pub count: usize,
+    pub list: Vec<SubjectSmall>,
+}
+
 struct AppStateInner {
     notifier: Sender<()>,
 
@@ -282,15 +287,35 @@ impl AppState {
         FetchResult::Deferred
     }
 
-    pub fn fetch_search(&mut self, search: &str) -> FetchResult<ShallowSearchResult> {
+    fn populate_search<'a>(&self, shallow: &'a ShallowSearchResult) -> FetchResult<PopulatedSearchResult> {
+        let mut list = Vec::with_capacity(shallow.ids.len());
+        let count = shallow.count;
+
+        let guard = self.inner.lock().unwrap();
+
+        for id in shallow.ids.iter() {
+            if let Some(InnerState::Fetched((), ref content)) = guard.subject.get(id) {
+                list.push(content.clone());
+            } else {
+                return FetchResult::Deferred;
+            }
+        }
+
+        FetchResult::Direct(PopulatedSearchResult{ count, list })
+    }
+
+    pub fn fetch_search(&mut self, search: &str) -> FetchResult<PopulatedSearchResult> {
         let mut guard = self.inner.lock().unwrap();
         let entry = guard.search.entry(search.to_string());
         match entry {
             hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
             hash_map::Entry::Occupied(mut entry) =>
                 match entry.get_mut() {
-                    InnerState::Fetched(_, ref result) =>
-                        return FetchResult::Direct(result.clone()),
+                    InnerState::Fetched(_, ref result) => {
+                        let cloned = result.clone();
+                        drop(guard);
+                        return self.populate_search(&cloned);
+                    }
                     InnerState::Fetching(_) =>
                         return FetchResult::Deferred,
                     value => {

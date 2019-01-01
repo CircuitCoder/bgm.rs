@@ -703,7 +703,52 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     }
                 }
 
-                Tab::SearchResult{ .. } => {}
+                Tab::SearchResult{ ref search, scroll: ref mut scroll_val } => {
+                    let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
+                    block.render(&mut f, chunks[1]);
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y-1, 1, 1));
+                    let inner = block.inner(chunks[1]);
+
+
+                    match app.fetch_search(search) {
+                        FetchResult::Deferred => {
+                            let region = inner.inner(1);
+                            Paragraph::new([Text::raw("Loading...")].iter())
+                                .alignment(Alignment::Center)
+                                .wrap(true)
+                                .render(&mut f, region);
+                        }
+                        FetchResult::Direct(result) => {
+                            use tui::style::*;
+
+                            let mut scroll = Scroll::default();
+                            let count = result.count.to_string();
+
+                            let mut heading = CJKText::raw([
+                                (search.as_str(), Style::default().fg(Color::Green)),
+                                ("\n", Style::default()),
+                                (count.as_str(), Style::default().fg(Color::Yellow)),
+                                (" 条结果", Style::default()),
+                            ].to_vec());
+
+                            scroll.push(&mut heading);
+
+                            let mut ents = result.list.iter().map(ViewingEntry::with_subject).collect::<Vec<_>>();
+
+                            for ent in ents.iter_mut() {
+                                scroll.push(ent);
+                            }
+
+                            let mut scroll = scroll.scroll(scroll_val.get());
+                            scroll.set_bound(inner);
+                            scroll.set_bound(inner);
+                            scroll_val.set(scroll.get_scroll());
+
+                            scroll.render(&mut f, inner);
+                        }
+                    }
+                }
             }
         })?;
 
