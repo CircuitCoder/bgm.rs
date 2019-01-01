@@ -258,10 +258,23 @@ impl<'a> Widget for CJKText<'a> {
             let tokens = text.graphemes(true);
 
             for token in tokens {
+                let newlines = token.chars().filter(|e| e == &'\n').count() as u16;
+                if newlines > 0 {
+                    dy += newlines;
+                    dx = 0;
+
+                    // This token only have invisible characters.
+                    continue;
+                }
+
                 let token_width = token.width_cjk() as u16;
                 if token_width + dx > area.width {
                     dx = 0;
                     dy += 1;
+                }
+
+                if dy >= area.height {
+                    return
                 }
 
                 buf.get_mut(dx + area.x, dy + area.y)
@@ -286,6 +299,15 @@ impl<'a> DynHeight for CJKText<'a> {
             let tokens = text.graphemes(true);
 
             for token in tokens {
+                let newlines = token.chars().filter(|e| e == &'\n').count() as u16;
+                if newlines > 0 {
+                    result += newlines;
+                    acc = 0;
+
+                    // This token only have invisible characters.
+                    continue;
+                }
+
                 let token_width = token.width_cjk() as u16;
                 if token_width + acc > width {
                     acc = token_width;

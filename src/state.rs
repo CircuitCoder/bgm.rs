@@ -281,12 +281,41 @@ pub const SELECTS: [(&str, SubjectType); 3] = [
     ("三刺螈", SubjectType::Real),
 ];
 
-#[derive(PartialEq, Clone)]
+#[derive(Clone)]
+pub struct ScrollState {
+    scroll: u16,
+}
+
+impl Default for ScrollState {
+    fn default() -> Self {
+        Self { scroll: 0 }
+    }
+}
+
+impl ScrollState {
+    pub fn get(&self) -> u16 {
+        self.scroll
+    }
+
+    pub fn set(&mut self, s: u16) {
+        self.scroll = s;
+    }
+
+    pub fn delta(&mut self, delta: i16) {
+        let new_scroll = self.scroll as i16 + delta;
+        self.scroll = if new_scroll < 0 { 0 } else { new_scroll as u16 };
+    }
+}
+
+#[derive(Clone)]
 pub enum Tab {
     Collection,
     Search,
 
-    Subject(u64),
+    Subject{
+        id: u64,
+        scroll: ScrollState,
+    },
 }
 
 impl Tab {
@@ -302,7 +331,7 @@ impl Tab {
         match self {
             Tab::Collection => "格子".to_string(),
             Tab::Search => "搜索".to_string(),
-            Tab::Subject(id) => format!("条目: {}", id),
+            Tab::Subject{ id, .. } => format!("条目: {}", id),
         }
     }
 
@@ -315,14 +344,14 @@ impl Tab {
 
     pub fn is_subject(&self) -> bool {
         match self {
-            Tab::Subject(_) => true,
+            Tab::Subject{ .. } => true,
             _ => false,
         }
     }
 
     pub fn subject_id(&self) -> Option<u64> {
         match self {
-            Tab::Subject(r) => Some(*r),
+            Tab::Subject{ id, .. } => Some(*id),
             _ => None,
         }
     }
@@ -377,7 +406,7 @@ pub struct UIState {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) tab: usize,
     pub(crate) filters: [bool; SELECTS.len()],
-    pub(crate) scroll: u16,
+    pub(crate) scroll: ScrollState,
     pub(crate) focus: Option<usize>,
     pub(crate) focus_limit: usize,
 
@@ -402,7 +431,7 @@ impl UIState {
             tab: 0,
             filters: [true; SELECTS.len()],
 
-            scroll: 0,
+            scroll: ScrollState::default(),
             focus: None,
             focus_limit: 0,
 
@@ -460,6 +489,11 @@ impl UIState {
     pub fn active_tab(&self) -> &Tab {
         // This really should not break
         self.tabs.get(self.tab).unwrap()
+    }
+
+    pub fn active_tab_mut(&mut self) -> &mut Tab {
+        // This really should not break
+        self.tabs.get_mut(self.tab).unwrap()
     }
 
     pub fn set_focus_limit(&mut self, mf: usize) {
@@ -785,15 +819,6 @@ impl UIState {
         }
     }
 
-    pub fn set_scroll(&mut self, s: u16) {
-        self.scroll = s;
-    }
-
-    pub fn scroll_delta(&mut self, delta: i16) {
-        let new_scroll = self.scroll as i16 + delta;
-        self.scroll = if new_scroll < 0 { 0 } else { new_scroll as u16 };
-    }
-
     pub fn set_focus(&mut self, f: Option<usize>) {
         self.focus = f;
     }
@@ -821,13 +846,13 @@ impl UIState {
 
         if let Some(target) = target {
             for (i, t) in self.tabs.iter().enumerate() {
-                if t == &Tab::Subject(target.subject.id) {
+                if t.subject_id() == Some(target.subject.id) {
                     self.tab = i;
                     return;
                 }
             }
 
-            self.tab = self.open_tab(Tab::Subject(target.subject.id));
+            self.tab = self.open_tab(Tab::Subject{ id: target.subject.id, scroll: ScrollState::default() });
         }
     }
 
