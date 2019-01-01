@@ -40,15 +40,24 @@ fn is_collection(ui: &UIState) -> bool {
     ui.active_tab().is_collection()
 }
 
-pub const HELP_DATABASE: [HelpEntry; 24] = [
+fn is_search(ui: &UIState) -> bool {
+    ui.active_tab().is_search()
+}
+
+fn is_search_result(ui: &UIState) -> bool {
+    ui.active_tab().is_search_result()
+}
+
+pub const HELP_DATABASE: [HelpEntry; 30] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
     HelpEntry(&[":qa", "C-q"], "Rage quit", &|_| true),
 
+    HelpEntry(&["R"], "刷新", &|ui| !is_search(ui)),
+
     // On primary tab
-    HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_collection(ui) && ui.focus.get().is_some()),
-    HelpEntry(&["j", "Down"], "选择下一个", &|ui| is_collection(ui) && ui.focus.get().is_some()),
-    HelpEntry(&["j", "Down"], "选择第一个", &|ui| is_collection(ui) && ui.focus.get().is_none()),
+    HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_collection(ui)),
+    HelpEntry(&["j", "Down"], "选择下一个", &|ui| is_collection(ui)),
     HelpEntry(&["t<i>"], "切换第 i 个过滤选项", &|ui| is_collection(ui)),
 
     // When have focus
@@ -69,12 +78,21 @@ pub const HELP_DATABASE: [HelpEntry; 24] = [
     HelpEntry(&["e"], "修改搜索文字", &|ui| if let Tab::Search{ text } = ui.active_tab() { text != "" } else { false }),
     HelpEntry(&["Enter"], "搜索", &|ui| if let Tab::Search{ text } = ui.active_tab() { text != "" } else { false }),
 
+    // In search result
+    HelpEntry(&["n"], "下一页", &|ui| is_search_result(ui)),
+    HelpEntry(&["N"], "上一页", &|ui| is_search_result(ui)),
+    HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_search_result(ui)),
+    HelpEntry(&["j", "Down"], "选择下一个", &|ui| is_search_result(ui)),
+
     // Long command
     HelpEntry(&["Esc"], "取消命令", &|ui| ui.command.present()),
 
     // Tabs
     HelpEntry(&["gt", "Tab"], "下一个 Tab", &|_| true),
     HelpEntry(&["gT"], "上一个 Tab", &|_| true),
+    HelpEntry(&["gg"], "滚动至顶", &|ui| !is_search(ui)),
+    HelpEntry(&["G"], "滚动至底", &|ui| !is_search(ui)),
+
     HelpEntry(&[":tabe <coll|search>"], "打开格子/搜索 Tab", &|_| true),
     HelpEntry(&[":tabm <n>"], "移动 Tab", &|_| true),
     HelpEntry(&[":q"], "关闭 Tab", &|_| true),
