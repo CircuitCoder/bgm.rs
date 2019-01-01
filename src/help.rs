@@ -40,7 +40,7 @@ fn is_collection(ui: &UIState) -> bool {
     ui.active_tab().is_collection()
 }
 
-pub const HELP_DATABASE: [HelpEntry; 18] = [
+pub const HELP_DATABASE: [HelpEntry; 21] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
     HelpEntry(&[":qa", "C-q"], "Rage quit", &|_| true),
@@ -48,6 +48,9 @@ pub const HELP_DATABASE: [HelpEntry; 18] = [
     // Tabs
     HelpEntry(&["gt", "Tab"], "下一个 Tab", &|_| true),
     HelpEntry(&["gT"], "上一个 Tab", &|_| true),
+    HelpEntry(&[":tabe <coll|search>"], "打开格子/搜索 Tab", &|_| true),
+    HelpEntry(&[":tabm <n>"], "移动 Tab", &|_| true),
+    HelpEntry(&[":q"], "关闭 Tab", &|_| true),
 
     // On primary tab
     HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_collection(ui) && ui.focus.is_some()),
@@ -66,7 +69,7 @@ pub const HELP_DATABASE: [HelpEntry; 18] = [
     HelpEntry(&["r"], "修改评分", &is_subject),
     HelpEntry(&["t"], "修改标签", &is_subject),
     HelpEntry(&["c"], "修改评论", &is_subject),
-    HelpEntry(&[":q", "Esc"], "关闭标签", &|ui| is_subject(ui) && !ui.command.present()),
+    HelpEntry(&["Esc"], "也可以关闭标签", &|ui| is_subject(ui) && !ui.command.present()),
 
     // Long command
     HelpEntry(&["Esc"], "取消命令", &|ui| ui.command.present()),

@@ -368,6 +368,11 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             terminal.resize(cursize)?; // Clears buffer
         }
 
+        // Safe catch, who knows how many racing conditions are there in the codebase?
+        if ui.tabs.len() == 0 {
+            break;
+        }
+
         terminal.draw(|mut f| {
             let pending = ui.pending.clone();
 

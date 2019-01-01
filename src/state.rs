@@ -319,14 +319,6 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub fn persistent(&self) -> bool {
-        match self {
-            Tab::Collection => true,
-            Tab::Search => true,
-            _ => false,
-        }
-    }
-
     pub fn disp(&self, app: &AppState) -> String {
         match self {
             Tab::Collection => "格子".to_string(),
@@ -471,18 +463,42 @@ impl UIState {
         self.tab = tab;
     }
 
-    pub fn open_tab(&mut self, tab: Tab) -> usize {
-        self.tabs.push(tab);
-        self.tabs.len() - 1
+    pub fn open_tab(&mut self, tab: Tab, pos: Option<usize>) -> usize {
+        let mut pos = pos.unwrap_or(self.tab + 1);
+
+        if pos > self.tabs.len() {
+            pos = self.tabs.len();
+        }
+
+        self.tabs.insert(pos, tab);
+        pos
+    }
+
+    pub fn move_tab(&mut self, mut dest: usize) -> usize {
+        if dest > self.tabs.len() {
+            dest = self.tabs.len();
+        }
+
+        let tab = self.tabs.remove(self.tab);
+        if dest > self.tab {
+            dest -= 1;
+        }
+        self.tabs.insert(dest, tab);
+        
+        dest
     }
 
     pub fn close_tab(&mut self, index: usize) {
-        if index < self.tabs.len() && !self.tabs[index].persistent() {
-            if self.tab == self.tabs.len() - 1 {
+        if index < self.tabs.len() {
+            if self.tab == self.tabs.len() - 1 && self.tab != 0 {
                 self.tab -= 1;
             }
 
             self.tabs.remove(index);
+        }
+
+        if self.tabs.len() == 0 {
+            self.pending = Some(PendingUIEvent::Quit);
         }
     }
 
@@ -591,6 +607,15 @@ impl UIState {
                                 "qa" => self.pending = Some(PendingUIEvent::Quit),
                                 "q" => self.close_tab(self.tab),
                                 "help" => self.help = !self.help,
+                                "tabe search" => self.tab = self.open_tab(Tab::Search, None),
+                                "tabe coll" => self.tab = self.open_tab(Tab::Collection, None),
+                                ref e if e.starts_with("tabm ") => {
+                                    let index = e[5..].parse::<usize>();
+                                    match index {
+                                        Ok(index) => self.tab = self.move_tab(index),
+                                        _ => app.publish_message(format!("{} 是不认识的数字!", &e[5..])),
+                                    }
+                                }
                                 _ => app.publish_message("是不认识的命令!".to_string()),
                             }
 
@@ -855,7 +880,7 @@ impl UIState {
                 }
             }
 
-            self.tab = self.open_tab(Tab::Subject{ id: target.subject.id, scroll: ScrollState::default() });
+            self.tab = self.open_tab(Tab::Subject{ id: target.subject.id, scroll: ScrollState::default() }, None);
         }
     }
 
