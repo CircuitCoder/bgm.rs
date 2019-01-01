@@ -622,7 +622,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     input_block.render(&mut f, input);
                     let input_inner = input_block.inner(input).inner(1);
 
-                    let mut text_comp = if text == "" {
+                    let mut text_comp = if text != "" {
                         let mut text_comp = CJKText::new(text);
                         text_comp.set_style(tui::style::Style::default().fg(tui::style::Color::White));
                         text_comp
