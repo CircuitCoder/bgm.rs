@@ -258,10 +258,12 @@ impl<'a> Widget for CJKText<'a> {
         for (text, style) in self.content.iter() {
             let tokens = text.graphemes(true);
 
+            let mut last_present = true;
+
             for token in tokens {
                 let newlines = token.chars().filter(|e| e == &'\n').count() as u16;
                 if newlines > 0 {
-                    if dx == 0 {
+                    if dx == 0 && last_present {
                         dy += newlines - 1;
                     } else {
                         dy += newlines;
@@ -269,8 +271,11 @@ impl<'a> Widget for CJKText<'a> {
                     dx = 0;
 
                     // This token only have invisible characters.
+                    last_present = false;
                     continue;
                 }
+
+                last_present = true;
 
                 let token_width = token.width_cjk() as u16;
                 if token_width + dx > area.width {
@@ -303,15 +308,24 @@ impl<'a> DynHeight for CJKText<'a> {
         for (text, _) in self.content.iter() {
             let tokens = text.graphemes(true);
 
+            let mut last_present = true;
+
             for token in tokens {
                 let newlines = token.chars().filter(|e| e == &'\n').count() as u16;
                 if newlines > 0 {
-                    result += newlines;
+                    if acc == 0 && last_present {
+                        result += newlines - 1;
+                    } else {
+                        result += newlines;
+                    }
                     acc = 0;
 
                     // This token only have invisible characters.
+                    last_present = false;
                     continue;
                 }
+
+                last_present = true;
 
                 let token_width = token.width_cjk() as u16;
                 if token_width + acc > width {
