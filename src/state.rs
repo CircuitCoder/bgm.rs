@@ -510,6 +510,10 @@ impl UIState {
     }
 
     pub fn toggle_filter(&mut self, index: usize, entries: &Option<Vec<CollectionEntry>>) {
+        if index >= self.filters.len() {
+            return;
+        }
+
         // Get original index of the filter
         let original = self
             .focus
@@ -612,10 +616,9 @@ impl UIState {
                 LongCommand::Toggle => {
                     match ev {
                         UIEvent::Key(Key::Char(i @ '1'...'9')) => {
-                            let i = i.to_digit(10).unwrap();
-                            if let Some(filter) = self.filters.get_mut(i as usize - 1) {
-                                *filter = !*filter;
-                            }
+                            let i = i.to_digit(10).unwrap() as usize;
+                            let collection = app.fetch_collection().into();
+                            self.toggle_filter(i-1, &collection);
 
                             self.command = LongCommand::Absent;
                             return self;

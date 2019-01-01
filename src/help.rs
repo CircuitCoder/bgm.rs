@@ -66,7 +66,7 @@ pub const HELP_DATABASE: [HelpEntry; 18] = [
     HelpEntry(&["r"], "修改评分", &is_subject),
     HelpEntry(&["t"], "修改标签", &is_subject),
     HelpEntry(&["c"], "修改评论", &is_subject),
-    HelpEntry(&["Esc", ":q"], "关闭标签", &|ui| is_subject(ui) && !ui.command.present()),
+    HelpEntry(&[":q", "Esc"], "关闭标签", &|ui| is_subject(ui) && !ui.command.present()),
 
     // Long command
     HelpEntry(&["Esc"], "取消命令", &|ui| ui.command.present()),
