@@ -186,7 +186,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
                 } else if pos >= self.bound.height - 1 {
                     h - self.bound.height
                 } else {
-                    (pos - 1) * (h - self.bound.height) / (self.bound.height - 2)
+                    pos * (h - self.bound.height) / (self.bound.height - 2)
                 };
 
                 return Some(ScrollEvent::ScrollTo(scroll));

@@ -394,6 +394,54 @@ impl ScrollState {
     }
 }
 
+#[derive(Default, Clone, PartialEq)]
+pub struct Focus {
+    focus: Option<usize>,
+    limit: usize,
+}
+
+impl Focus {
+    fn normalize(&mut self) {
+        if let Some(f) = self.focus {
+            if f >= self.limit {
+                if self.limit == 0 {
+                    self.focus = None;
+                } else {
+                    self.focus = Some(self.limit - 1);
+                }
+            }
+        }
+    }
+
+    pub fn set(&mut self, focus: Option<usize>) {
+        self.focus = focus;
+        self.normalize();
+    }
+
+    pub fn get(&self) -> Option<usize> {
+        self.focus
+    }
+
+    pub fn set_limit(&mut self, limit: usize) {
+        self.limit = limit;
+        self.normalize();
+    }
+
+    pub fn next(&mut self) {
+        match self.focus {
+            Some(f) => self.set(Some(f+1)),
+            None => self.set(Some(0)),
+        }
+    }
+
+    pub fn prev(&mut self) {
+        match self.focus {
+            Some(f) if f > 0 => self.set(Some(f-1)),
+            _ => {}
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Tab {
     Collection,
@@ -410,7 +458,7 @@ pub enum Tab {
     SearchResult{
         search: String,
         scroll: ScrollState,
-        focus: Option<usize>,
+        focus: Focus,
     },
 }
 
@@ -445,6 +493,12 @@ impl Tab {
         }
     }
 
+    pub fn is_search_result(&self) -> bool {
+        match self {
+            Tab::SearchResult{ .. } => true,
+            _ => false,
+        }
+    }
     pub fn subject_id(&self) -> Option<u64> {
         match self {
             Tab::Subject{ id, .. } => Some(*id),
@@ -506,8 +560,7 @@ pub struct UIState {
     pub(crate) tab: usize,
     pub(crate) filters: [bool; SELECTS.len()],
     pub(crate) scroll: ScrollState,
-    pub(crate) focus: Option<usize>,
-    pub(crate) focus_limit: usize,
+    pub(crate) focus: Focus,
 
     pub(crate) pending: Option<PendingUIEvent>,
 
@@ -531,8 +584,7 @@ impl UIState {
             filters: [true; SELECTS.len()],
 
             scroll: ScrollState::default(),
-            focus: None,
-            focus_limit: 0,
+            focus: Default::default(),
 
             pending: None,
 
@@ -623,19 +675,6 @@ impl UIState {
         self.tabs.get_mut(self.tab).unwrap()
     }
 
-    pub fn set_focus_limit(&mut self, mf: usize) {
-        self.focus_limit = mf;
-        if let Some(f) = self.focus {
-            if f >= mf {
-                if mf == 0 {
-                    self.focus = None;
-                } else {
-                    self.focus = Some(mf - 1);
-                }
-            }
-        }
-    }
-
     pub fn toggle_filter(&mut self, index: usize, entries: &Option<Vec<CollectionEntry>>) {
         if index >= self.filters.len() {
             return;
@@ -644,6 +683,7 @@ impl UIState {
         // Get original index of the filter
         let original = self
             .focus
+            .get()
             .and_then(|focus| self.do_filter(entries).skip(focus).next())
             .map(|e| e.subject.id);
 
@@ -658,7 +698,7 @@ impl UIState {
             }
         }
 
-        self.focus = new_focus;
+        self.focus.set(new_focus);
     }
 
     pub fn do_filter<'s, 'a>(
@@ -855,31 +895,23 @@ impl UIState {
         match ev {
             UIEvent::Key(Key::Ctrl('q')) => self.pending = Some(PendingUIEvent::Quit),
 
-            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_collection() => match self.focus {
-                    None => {
-                        self.focus = Some(0);
-                        self.pending = Some(PendingUIEvent::ScrollIntoView(0));
-                    }
-                    Some(f) => {
-                        if f + 1 < self.focus_limit {
-                            self.focus = Some(f + 1);
-                            self.pending = Some(PendingUIEvent::ScrollIntoView(f + 1));
-                        }
-                    }
-                },
-            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_collection() => {
-                    if let Some(f) = self.focus {
-                        if f > 0 {
-                            self.focus = Some(f - 1);
-                            self.pending = Some(PendingUIEvent::ScrollIntoView(f - 1));
-                        }
-                    }
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_collection() => {
+                self.focus.next();
+                if let Some(f) = self.focus.get() {
+                    self.pending = Some(PendingUIEvent::ScrollIntoView(f));
                 }
+            }
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_collection() => {
+                self.focus.prev();
+                if let Some(f) = self.focus.get() {
+                    self.pending = Some(PendingUIEvent::ScrollIntoView(f));
+                }
+            }
             UIEvent::Key(Key::Char('t')) if self.active_tab().is_collection() => {
                 self.command = LongCommand::Toggle;
             }
-            UIEvent::Key(Key::Char('+')) if self.active_tab().is_collection() && self.focus.is_some() => {
-                let focus = self.focus.unwrap();
+            UIEvent::Key(Key::Char('+')) if self.active_tab().is_collection() && self.focus.get().is_some() => {
+                let focus = self.focus.get().unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
 
@@ -892,8 +924,8 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('-')) if self.active_tab().is_collection() && self.focus.is_some() => {
-                let focus = self.focus.unwrap();
+            UIEvent::Key(Key::Char('-')) if self.active_tab().is_collection() && self.focus.get().is_some() => {
+                let focus = self.focus.get().unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
 
@@ -906,8 +938,8 @@ impl UIState {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_collection() && self.focus.is_some() => {
-                let focus = self.focus.unwrap();
+            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_collection() && self.focus.get().is_some() => {
+                let focus = self.focus.get().unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
 
@@ -915,7 +947,7 @@ impl UIState {
                     self.goto_detail(t.subject.id);
                 }
             }
-            UIEvent::Key(Key::Esc) if self.active_tab().is_collection() && self.focus.is_some() => self.focus = None,
+            UIEvent::Key(Key::Esc) if self.active_tab().is_collection() && self.focus.get().is_some() => self.focus.set(None),
 
             UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
                 let id = self.active_tab().subject_id().unwrap();
@@ -959,7 +991,7 @@ impl UIState {
                         self.replace_tab(Tab::SearchResult{
                             search: text.clone(),
                             scroll: Default::default(),
-                            focus: None,
+                            focus: Default::default(),
                         });
                     }
                 }
@@ -970,6 +1002,21 @@ impl UIState {
                     self.command = LongCommand::SearchInput(text.clone());
                 }
             }
+
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_search_result() =>
+                if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
+                    focus.next();
+                    if let Some(f) = focus.get() {
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(f));
+                    }
+                }
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_search_result() =>
+                if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
+                    focus.prev();
+                    if let Some(f) = focus.get() {
+                        self.pending = Some(PendingUIEvent::ScrollIntoView(f));
+                    }
+                }
 
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Tab,
@@ -1005,10 +1052,6 @@ impl UIState {
         } else {
             false
         }
-    }
-
-    pub fn set_focus(&mut self, f: Option<usize>) {
-        self.focus = f;
     }
 
     fn update_click(&mut self, x: u16, y: u16) {

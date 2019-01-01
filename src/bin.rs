@@ -513,7 +513,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     if let FetchResult::Direct(collection) = collection {
                         // Sync app state into ui state
-                        ui.set_focus_limit(collection.len());
+                        ui.focus.set_limit(collection.len());
 
                         let inner = outer.inner(subchunks[1]);
 
@@ -525,7 +525,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             .map(ViewingEntry::with_coll)
                             .collect::<Vec<_>>();
 
-                        if let Some(i) = ui.focus {
+                        if let Some(i) = ui.focus.get() {
                             ents[i].select(true);
                         }
 
@@ -561,10 +561,10 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                     Some(ScrollEvent::Sub(i)) => match ents[i].intercept(x, y, btn)
                                     {
                                         Some(ViewingEntryEvent::Click) => {
-                                            if ui.focus == Some(i) && is_double_click {
+                                            if ui.focus.get() == Some(i) && is_double_click {
                                                 ui.goto_detail(collection.unwrap()[i].subject.id);
                                             } else {
-                                                ui.set_focus(Some(i));
+                                                ui.focus.set(Some(i));
                                             }
                                         }
                                         _ => {}
@@ -725,6 +725,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                         FetchResult::Direct(result) => {
                             use tui::style::*;
 
+                            focus.set_limit(result.list.len());
+
                             let mut scroll = Scroll::default();
                             let count = result.count.to_string();
 
@@ -739,7 +741,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             let mut ents = result.list.iter().map(ViewingEntry::with_subject).collect::<Vec<_>>();
 
-                            if let Some(focus) = focus.and_then(|focus| ents.get_mut(focus)) {
+                            if let Some(focus) = focus.get().and_then(|focus| ents.get_mut(focus)) {
                                 focus.select(true);
                             }
 
@@ -755,7 +757,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             scroll.render(&mut f, inner);
 
                             if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
-                                scroll.scroll_into_view(index);
+                                scroll.scroll_into_view(index+1);
                                 scroll_val.set(scroll.get_scroll());
                             }
 
@@ -771,12 +773,12 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                         Some(ScrollEvent::ScrollDown) => {
                                             scroll_val.delta(1);
                                         }
-                                        Some(ScrollEvent::Sub(i)) => match ents[i-1].intercept(x, y, btn) {
+                                        Some(ScrollEvent::Sub(i)) if i > 0 => match ents[i-1].intercept(x, y, btn) {
                                             Some(ViewingEntryEvent::Click) => {
-                                                if *focus == Some(i-1) && is_double_click {
+                                                if focus.get() == Some(i-1) && is_double_click {
                                                     ui.goto_detail(result.list[i-1].id);
                                                 } else {
-                                                    *focus = Some(i-1);
+                                                    focus.set(Some(i-1));
                                                 }
                                             }
                                             _ => {}

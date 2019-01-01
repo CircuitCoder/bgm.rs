@@ -46,16 +46,16 @@ pub const HELP_DATABASE: [HelpEntry; 24] = [
     HelpEntry(&[":qa", "C-q"], "Rage quit", &|_| true),
 
     // On primary tab
-    HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_collection(ui) && ui.focus.is_some()),
-    HelpEntry(&["j", "Down"], "选择下一个", &|ui| is_collection(ui) && ui.focus.is_some()),
-    HelpEntry(&["j", "Down"], "选择第一个", &|ui| is_collection(ui) && ui.focus.is_none()),
+    HelpEntry(&["k", "Up"], "选择上一个", &|ui| is_collection(ui) && ui.focus.get().is_some()),
+    HelpEntry(&["j", "Down"], "选择下一个", &|ui| is_collection(ui) && ui.focus.get().is_some()),
+    HelpEntry(&["j", "Down"], "选择第一个", &|ui| is_collection(ui) && ui.focus.get().is_none()),
     HelpEntry(&["t<i>"], "切换第 i 个过滤选项", &|ui| is_collection(ui)),
 
     // When have focus
-    HelpEntry(&["+"], "增加进度", &|ui| is_collection(ui) && ui.focus.is_some()),
-    HelpEntry(&["-"], "减少进度", &|ui| is_collection(ui) && ui.focus.is_some()),
-    HelpEntry(&["Enter"], "详情/编辑", &|ui| is_collection(ui) && ui.focus.is_some()),
-    HelpEntry(&["Esc"], "取消选择", &|ui| is_collection(ui) && ui.focus.is_some() && !ui.command.present()),
+    HelpEntry(&["+"], "增加进度", &|ui| is_collection(ui) && ui.focus.get().is_some()),
+    HelpEntry(&["-"], "减少进度", &|ui| is_collection(ui) && ui.focus.get().is_some()),
+    HelpEntry(&["Enter"], "详情/编辑", &|ui| is_collection(ui) && ui.focus.get().is_some()),
+    HelpEntry(&["Esc"], "取消选择", &|ui| is_collection(ui) && ui.focus.get().is_some() && !ui.command.present()),
 
     // When in subject page
     HelpEntry(&["s"], "修改收藏状态", &is_subject),
