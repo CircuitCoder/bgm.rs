@@ -22,7 +22,7 @@ impl<'a> Into<CJKText<'static>> for &'a HelpEntry {
             if i != 0 {
                 result.push((" / ", Style::default()));
             }
-            result.push((self.0[i], Style::default().modifier(Modifier::Bold).fg(Color::Green)));
+            result.push((self.0[i], Style::default().modifier(Modifier::Bold).fg(Color::Red)));
         }
 
         result.push((": ", Style::default()));

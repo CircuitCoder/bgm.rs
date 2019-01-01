@@ -275,10 +275,10 @@ impl AppState {
     }
 }
 
-pub const SELECTS: [(&str, SubjectType); 3] = [
-    ("动画骗", SubjectType::Anime),
-    ("小书本", SubjectType::Book),
-    ("三刺螈", SubjectType::Real),
+pub const SELECTS: [SubjectType; 3] = [
+    SubjectType::Anime,
+    SubjectType::Book,
+    SubjectType::Real,
 ];
 
 #[derive(Clone)]
@@ -543,7 +543,7 @@ impl UIState {
             Some(entries) => {
                 let filters = self.filters.clone();
                 itertools::Either::Right(entries.iter().filter(move |e| {
-                    for (i, (_, t)) in SELECTS.iter().enumerate() {
+                    for (i, t) in SELECTS.iter().enumerate() {
                         if t == &e.subject.subject_type {
                             return filters[i];
                         }

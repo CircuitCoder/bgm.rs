@@ -8,6 +8,7 @@ use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+use crate::SubjectTypeExt;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
@@ -260,7 +261,11 @@ impl<'a> Widget for CJKText<'a> {
             for token in tokens {
                 let newlines = token.chars().filter(|e| e == &'\n').count() as u16;
                 if newlines > 0 {
-                    dy += newlines;
+                    if dx == 0 {
+                        dy += newlines - 1;
+                    } else {
+                        dy += newlines;
+                    }
                     dx = 0;
 
                     // This token only have invisible characters.
@@ -329,7 +334,6 @@ pub enum ViewingEntryEvent {
 pub struct ViewingEntry<'a> {
     coll: &'a CollectionEntry,
     text: CJKText<'a>,
-    text_cn: CJKText<'a>,
     progress: Option<ViewProgress>,
 
     selected: bool,
@@ -337,9 +341,13 @@ pub struct ViewingEntry<'a> {
 
 impl<'a> ViewingEntry<'a> {
     pub fn new(ent: &'a CollectionEntry) -> Self {
-        let mut text = CJKText::new(ent.subject.name.as_str());
-        text.set_style(Style::default().fg(Color::Yellow));
-        let text_cn = CJKText::new(ent.subject.name_cn.as_str());
+        let mut text = CJKText::raw([
+            (ent.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
+            ("\n", Style::default()),
+            (ent.subject.name.as_str(), Style::default().fg(Color::Yellow)),
+            ("\n", Style::default()),
+            (ent.subject.name_cn.as_str(), Style::default()),
+        ].to_vec());
 
         let progress = match ent.subject.subject_type {
             SubjectType::Book => Some(ViewProgress::new(
@@ -355,7 +363,6 @@ impl<'a> ViewingEntry<'a> {
         Self {
             coll: ent,
             text,
-            text_cn,
             progress,
 
             selected: false,
@@ -382,22 +389,15 @@ impl<'a> Widget for ViewingEntry<'a> {
         self.text.draw(inner, buf);
 
         let occupied_height = self.text.height(inner.width);
-        let new_area = Rect::new(
-            inner.x,
-            inner.y + occupied_height,
-            inner.width,
-            inner.height - occupied_height,
-        );
-        self.text_cn.draw(new_area, buf);
 
         if let Some(ref mut progress) = self.progress {
-            let occupied_height = self.text_cn.height(inner.width) + 1;
+            let occupied_height = self.text.height(inner.width) + 1;
 
             let new_area = Rect::new(
-                new_area.x,
-                new_area.y + occupied_height,
-                new_area.width,
-                new_area.height - occupied_height,
+                inner.x,
+                inner.y + occupied_height,
+                inner.width,
+                inner.height - occupied_height,
             );
             progress.draw(new_area, buf);
         }
@@ -407,7 +407,6 @@ impl<'a> Widget for ViewingEntry<'a> {
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
         2 + self.text.height(width - 2)
-            + self.text_cn.height(width - 2)
             + self
                 .progress
                 .as_ref()

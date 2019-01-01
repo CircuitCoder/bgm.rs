@@ -1,4 +1,5 @@
 #![feature(const_slice_len)]
+#![feature(const_fn)]
 
 mod widgets;
 mod state;
@@ -8,7 +9,7 @@ use crate::state::*;
 use crate::help::*;
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
-use bgmtv::client::{Client, CollectionStatus};
+use bgmtv::client::{Client, CollectionStatus, SubjectType};
 use bgmtv::settings::Settings;
 use clap;
 use colored::*;
@@ -296,7 +297,7 @@ impl CollectionStatusExt for CollectionStatus {
         match self {
             Wished => "打算做",
             Doing => "在做了",
-            Done => "完成了",
+            Done => "完成！",
             OnHold => "摸了",
             Dropped => "没得了",
         }
@@ -310,6 +311,22 @@ impl CollectionStatusExt for CollectionStatus {
             Done => OnHold,
             OnHold => Dropped,
             Dropped => Wished,
+        }
+    }
+}
+
+trait SubjectTypeExt : Sized {
+    fn disp(&self) -> &'static str;
+}
+
+impl SubjectTypeExt for SubjectType {
+    fn disp(&self) -> &'static str {
+        match self {
+            SubjectType::Anime => "动画骗",
+            SubjectType::Book => "书籍",
+            SubjectType::Real => "三次元",
+            SubjectType::Game => "游戏",
+            SubjectType::Music => "音乐",
         }
     }
 }
@@ -434,7 +451,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     let filter_inner = filter_block.inner(subchunks[0]).padding_hoz(1);
                     let filter_names = SELECTS
                         .iter()
-                        .map(|(name, _)| *name)
+                        .map(SubjectTypeExt::disp)
                         .collect::<Vec<&'static str>>();
                     let mut filters = FilterList::with(&filter_names, &ui.filters);
 
@@ -442,7 +459,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     let count;
                     if let FetchResult::Direct(ref collection) = collection {
-                        count = SELECTS.iter().map(|(_, t)| {
+                        count = SELECTS.iter().map(|t| {
                             let mut c = 0;
                             for ent in collection {
                                 if &ent.subject.subject_type == t {
