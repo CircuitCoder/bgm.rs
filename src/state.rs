@@ -595,6 +595,7 @@ const HELP_THRESHOLD: usize = 3;
 pub struct UIState {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) tab: usize,
+    pub(crate) tab_scroll: ScrollState,
 
     // TODO: move to the collection tab
     pub(crate) filters: [bool; SELECTS.len()],
@@ -624,8 +625,9 @@ impl UIState {
                 Tab::Search{ text: String::new() },
             ].to_vec(),
             tab: 0,
-            filters: [true; SELECTS.len()],
+            tab_scroll:Default::default(),
 
+            filters: [true; SELECTS.len()],
             scroll: Default::default(),
             focus: Default::default(),
 

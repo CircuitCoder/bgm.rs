@@ -9,6 +9,7 @@ use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use crate::SubjectTypeExt;
+use crate::state::ScrollState;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
@@ -16,7 +17,12 @@ pub trait DynHeight: Widget {
 
 pub trait Intercept<Event> {
     fn intercept(&mut self, x: u16, y: u16, btn: MouseButton) -> Option<Event>;
+
+    // Set the viewport for intercepting event
     fn set_bound(&mut self, _area: Rect) {}
+
+    // Normalize internal state related to the bound, such as maximum value of scroll
+    fn cap_bound(&mut self) {}
 }
 
 pub enum ScrollEvent {
@@ -28,36 +34,24 @@ pub enum ScrollEvent {
 
 pub struct Scroll<'a> {
     content: Vec<&'a mut DynHeight>,
-    offset: u16,
-
     bound: Rect,
-}
-
-impl<'a> Default for Scroll<'a> {
-    fn default() -> Self {
-        Self {
-            content: Vec::new(),
-            offset: 0,
-            bound: Rect::default(),
-        }
-    }
+    scroll: &'a mut ScrollState,
 }
 
 impl<'a> Scroll<'a> {
-    fn inner_height(&self, width: u16) -> u16 {
+    pub fn with(scroll: &'a mut ScrollState) -> Self {
+        Self {
+            content: Vec::new(),
+            bound: Rect::default(),
+            scroll,
+        }
+    }
+
+    pub fn inner_height(&self, width: u16) -> u16 {
         if width == 0 {
             return 0;
         }
         self.content.iter().fold(0, |acc, e| acc + e.height(width))
-    }
-
-    pub fn scroll(mut self, s: u16) -> Self {
-        self.offset = s;
-        self
-    }
-
-    pub fn get_scroll(&self) -> u16 {
-        self.offset
     }
 
     pub fn push(&mut self, comp: &'a mut DynHeight) {
@@ -78,15 +72,15 @@ impl<'a> Scroll<'a> {
 
         let end = start + self.content[index].height(self.bound.width-1);
 
-        let new_offset = if start < self.offset {
+        let new_offset = if start < self.scroll.get() {
             start
-        } else if end > self.offset + self.bound.height {
+        } else if end > self.scroll.get() + self.bound.height {
             end - self.bound.height
         } else {
-            self.offset
+            self.scroll.get()
         };
 
-        self.offset = new_offset;
+        self.scroll.set(new_offset);
     }
 }
 
@@ -102,10 +96,8 @@ impl<'a> Widget for Scroll<'a> {
             return;
         }
 
-        self.set_bound(area);
-
         let h = self.inner_height(w);
-        let scroll = self.offset;
+        let scroll = self.scroll.get();
 
         let mut dy = 0;
         for comp in self.content.iter_mut() {
@@ -139,12 +131,12 @@ impl<'a> Widget for Scroll<'a> {
         // Draw scroller
         if h > area.height {
             let vacant = area.height - 2;
-            let pos = if self.offset == 0 {
+            let pos = if self.scroll.get() == 0 {
                 0
-            } else if self.offset >= h - area.height {
+            } else if self.scroll.get() >= h - area.height {
                 area.height - 2
             } else {
-                let progress = (self.offset - 1) as usize;
+                let progress = (self.scroll.get() - 1) as usize;
                 (progress * vacant as usize / (h - area.height) as usize) as u16 + 1
             };
 
@@ -196,7 +188,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
             }
         } else if x < self.bound.x + self.bound.width - 1 {
             // Is children
-            let mut y = y - self.bound.y + self.offset;
+            let mut y = y - self.bound.y + self.scroll.get();
 
             for i in 0..self.content.len() {
                 let h = self.content[i].height(self.bound.width-1);
@@ -213,12 +205,16 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
 
     fn set_bound(&mut self, area: Rect) {
         self.bound = area;
+    }
+
+    fn cap_bound(&mut self) {
+        let area = &self.bound;
 
         let new_height = self.inner_height(area.width-1);
         if new_height <= area.height {
-            self.offset = 0;
-        } else if new_height <= area.height + self.offset {
-            self.offset = new_height - area.height;
+            self.scroll.set(0);
+        } else if new_height <= area.height + self.scroll.get() {
+            self.scroll.set(new_height - area.height);
         }
     }
 }
@@ -473,20 +469,26 @@ pub struct Tabber<'a> {
     selected: Option<usize>,
 
     bound: Rect,
+    scroll: &'a mut ScrollState,
 }
 
 impl<'a> Tabber<'a> {
-    pub fn with(tabs: &'a [&'a str]) -> Self {
+    pub fn with(tabs: &'a [&'a str], scroll: &'a mut ScrollState) -> Self {
         Self {
             tabs,
             selected: None,
             bound: Rect::default(),
+            scroll,
         }
     }
 
     pub fn select(mut self, index: usize) -> Self {
         self.selected = Some(index);
         self
+    }
+
+    pub fn inner_width(&self) -> u16 {
+        self.tabs.iter().fold(0, |acc, x| acc + CJKText::new(x).oneline_min_width() + 2)
     }
 }
 
@@ -552,6 +554,17 @@ impl<'a> Intercept<TabberEvent> for Tabber<'a> {
 
     fn set_bound(&mut self, area: Rect) {
         self.bound = area;
+    }
+
+    fn cap_bound(&mut self) {
+        let area = &self.bound;
+
+        let tot_width = self.inner_width();
+        if tot_width <= area.width {
+            self.scroll.set(0);
+        } else if tot_width <= area.width + self.scroll.get() {
+            self.scroll.set(tot_width - area.width);
+        }
     }
 }
 

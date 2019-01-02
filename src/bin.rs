@@ -412,15 +412,16 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                     .filter(|e| e.pred()(&ui))
                     .map(Into::into)
                     .collect::<Vec<CJKText>>();
-                let mut help_scroll = Scroll::default();
+
+                let mut help_scroll = Scroll::with(&mut ui.help_scroll);
 
                 for text in help_texts.iter_mut() {
                     help_scroll.push(text);
                 }
 
-                let mut help_scroll = help_scroll.scroll(ui.help_scroll.get());
                 help_scroll.set_bound(help_inner);
-                ui.help_scroll.set(help_scroll.get_scroll());
+                help_scroll.cap_bound();
+
                 help_scroll.render(&mut f, help_inner);
 
                 if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
@@ -459,7 +460,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             let tab_inner = tab_block.inner(chunks[0]);
             let tab_names = ui.tabs.iter().map(|e| e.disp(&app)).collect::<Vec<_>>();
             let tab_name_borrows = tab_names.iter().map(|e| e.as_str()).collect::<Vec<_>>();
-            let mut tabber = Tabber::with(tab_name_borrows.as_slice()).select(ui.tab);
+            let mut tabber = Tabber::with(tab_name_borrows.as_slice(), &mut ui.tab_scroll).select(ui.tab);
             tabber.set_bound(tab_inner);
             tabber.render(&mut f, tab_inner);
 
@@ -544,8 +545,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                         let inner = outer.inner(subchunks[1]);
 
-                        let mut scroll = Scroll::default();
-
                         let collection = Some(collection);
                         let mut ents = ui
                             .do_filter(&collection)
@@ -556,24 +555,20 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             ents[i].select(true);
                         }
 
+                        let mut scroll = Scroll::with(&mut ui.scroll);
                         for ent in ents.iter_mut() {
                             scroll.push(ent);
                         }
 
-                        let mut scroll = scroll.scroll(ui.scroll.get());
-
                         if inner.width > 0 {
                             scroll.set_bound(inner);
-
-                            // Update offset
-                            ui.scroll.set(scroll.get_scroll());
+                            scroll.cap_bound();
 
                             scroll.render(&mut f, inner);
                         }
 
                         if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
                             scroll.scroll_into_view(index);
-                            ui.scroll.set(scroll.get_scroll());
                         }
 
                         if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
@@ -653,7 +648,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             CJKText::new(&text).render(&mut f, inner);
                         }
                         FetchResult::Direct((detail, subject)) => {
-                            let mut scroll = Scroll::default();
+                            let mut scroll = Scroll::with(scroll_val);
 
                             let mut subject_text = CJKText::raw([
                                 (subject.name.as_str(), Style::default().fg(Color::Yellow)),
@@ -714,11 +709,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                 scroll.push(&mut detail_text);
                             }
 
-                            let mut scroll = scroll.scroll(scroll_val.get());
                             scroll.set_bound(inner);
-                            scroll_val.set(scroll.get_scroll());
-
-                            scroll.set_bound(inner);
+                            scroll.cap_bound();
                             scroll.render(&mut f, inner);
 
                             if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
@@ -762,7 +754,6 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             focus.set_limit(result.list.len());
 
-                            let mut scroll = Scroll::default();
                             let count = result.count.to_string();
                             let visible = result.list.len().to_string();
                             let lower = (*index * SEARCH_PAGING + 1).to_string();
@@ -791,6 +782,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                 ].to_vec())
                             };
 
+                            let mut scroll = Scroll::with(scroll_val);
                             scroll.push(&mut heading);
 
                             let mut ents = result.list.iter().map(ViewingEntry::with_subject).collect::<Vec<_>>();
@@ -805,15 +797,12 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             let inner = inner.padding_left(1);
 
-                            let mut scroll = scroll.scroll(scroll_val.get());
                             scroll.set_bound(inner);
-                            scroll_val.set(scroll.get_scroll());
-
+                            scroll.cap_bound();
                             scroll.render(&mut f, inner);
 
                             if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
                                 scroll.scroll_into_view(index+1);
-                                scroll_val.set(scroll.get_scroll());
                             }
 
                             if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
