@@ -350,19 +350,6 @@ impl SubjectTypeExt for SubjectType {
     }
 }
 
-trait StyleExt : Default {
-    fn black() -> Self {
-        Default::default()
-    }
-}
-
-impl StyleExt for tui::style::Style {
-    fn black() -> tui::style::Style {
-        let style: tui::style::Style = Default::default();
-        style.bg(tui::style::Color::Black)
-    }
-}
-
 fn bootstrap(client: Client) -> Result<(), failure::Error> {
     let stdout = std::io::stdout().into_raw_mode()?;
     let stdout = termion::input::MouseTerminal::from(stdout);
@@ -640,7 +627,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                     let mut text_comp = if text != "" {
                         let mut text_comp = CJKText::new(text);
-                        text_comp.set_style(tui::style::Style::black().fg(tui::style::Color::White));
+                        text_comp.set_style(tui::style::Style::default().fg(tui::style::Color::White));
                         text_comp
                     } else {
                         CJKText::new("按 e 或 Enter 开始输入，然后双击 Enter 搜索")
@@ -669,12 +656,12 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                             let mut scroll = Scroll::default();
 
                             let mut subject_text = CJKText::raw([
-                                (subject.name.as_str(), Style::black().fg(Color::Yellow)),
-                                ("\n", Style::black()),
-                                (subject.name_cn.as_str(), Style::black().fg(Color::White)),
-                                ("\n\n", Style::black()),
-                                (subject.summary.as_str(), Style::black()),
-                                ("\n\n", Style::black()),
+                                (subject.name.as_str(), Style::default().fg(Color::Yellow)),
+                                ("\n", Style::default()),
+                                (subject.name_cn.as_str(), Style::default().fg(Color::White)),
+                                ("\n\n", Style::default()),
+                                (subject.summary.as_str(), Style::default()),
+                                ("\n\n", Style::default()),
                             ].to_vec());
 
                             scroll.push(&mut subject_text);
@@ -697,21 +684,21 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                 tag = detail_cont.tag.join(", ");
 
                                 detail_text = CJKText::raw([
-                                    ("状态: ", Style::black().fg(Color::Blue)),
-                                    (status, Style::black()),
+                                    ("状态: ", Style::default().fg(Color::Blue)),
+                                    (status, Style::default()),
 
-                                    ("\n", Style::black()),
+                                    ("\n", Style::default()),
 
-                                    ("评分: ", Style::black().fg(Color::Blue)),
-                                    (&score, Style::black()),
+                                    ("评分: ", Style::default().fg(Color::Blue)),
+                                    (&score, Style::default()),
 
-                                    ("\n", Style::black()),
+                                    ("\n", Style::default()),
 
-                                    ("标签: ", Style::black().fg(Color::Blue)),
-                                    (&tag, Style::black()),
+                                    ("标签: ", Style::default().fg(Color::Blue)),
+                                    (&tag, Style::default()),
 
-                                    ("\n\n", Style::black()),
-                                    ("评论: ", Style::black().fg(Color::Blue)),
+                                    ("\n\n", Style::default()),
+                                    ("评论: ", Style::default().fg(Color::Blue)),
                                 ].to_vec());
 
                                 comment = CJKText::new(&detail_cont.comment);
@@ -720,8 +707,8 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
                                 scroll.push(&mut comment);
                             } else {
                                 detail_text = CJKText::raw([
-                                    ("状态: ", Style::black().fg(Color::Blue)),
-                                    ("没打算", Style::black()),
+                                    ("状态: ", Style::default().fg(Color::Blue)),
+                                    ("没打算", Style::default()),
                                 ].to_vec());
 
                                 scroll.push(&mut detail_text);
@@ -783,24 +770,24 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
 
                             let mut heading = if result.count == 0 {
                                 CJKText::raw([
-                                    (search.as_str(), Style::black().fg(Color::Green)),
-                                    ("\n", Style::black()),
-                                    ("这里是", Style::black()),
-                                    ("没有猫咪", Style::black().fg(Color::Yellow)),
-                                    ("的荒原\n\n是不是越界了?", Style::black()),
+                                    (search.as_str(), Style::default().fg(Color::Green)),
+                                    ("\n", Style::default()),
+                                    ("这里是", Style::default()),
+                                    ("没有猫咪", Style::default().fg(Color::Yellow)),
+                                    ("的荒原\n\n是不是越界了?", Style::default()),
                                 ].to_vec())
                             } else {
                                 CJKText::raw([
-                                    (search.as_str(), Style::black().fg(Color::Green)),
-                                    ("\n", Style::black()),
-                                    (count.as_str(), Style::black().fg(Color::Yellow)),
-                                    (" 结果，", Style::black()),
-                                    (lower.as_str(), Style::black().fg(Color::Yellow)),
-                                    (" - ", Style::black()),
-                                    (upper.as_str(), Style::black().fg(Color::Yellow)),
-                                    ("，", Style::black()),
-                                    (visible.as_str(), Style::black().fg(Color::Yellow)),
-                                    (" 可见", Style::black()),
+                                    (search.as_str(), Style::default().fg(Color::Green)),
+                                    ("\n", Style::default()),
+                                    (count.as_str(), Style::default().fg(Color::Yellow)),
+                                    (" 结果，", Style::default()),
+                                    (lower.as_str(), Style::default().fg(Color::Yellow)),
+                                    (" - ", Style::default()),
+                                    (upper.as_str(), Style::default().fg(Color::Yellow)),
+                                    ("，", Style::default()),
+                                    (visible.as_str(), Style::default().fg(Color::Yellow)),
+                                    (" 可见", Style::default()),
                                 ].to_vec())
                             };
 

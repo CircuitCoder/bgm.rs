@@ -1,5 +1,4 @@
 use bgmtv::client::{CollectionEntry, SubjectType, SubjectSmall};
-use crate::StyleExt; // Override default
 use termion::event::MouseButton;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
@@ -155,14 +154,14 @@ impl<'a> Widget for Scroll<'a> {
                         area.x + area.width - 1,
                         area.y + y,
                         symbols::block::FULL,
-                        Style::black(),
+                        Style::default(),
                     );
                 } else {
                     buf.set_string(
                         area.x + area.width - 1,
                         area.y + y,
                         symbols::line::VERTICAL,
-                        Style::black(),
+                        Style::default(),
                     );
                 }
             }
@@ -230,7 +229,7 @@ pub struct CJKText<'a> {
 
 impl<'a> CJKText<'a> {
     pub fn new(text: &'a str) -> Self {
-        Self { content: [(text, Style::black())].to_vec() }
+        Self { content: [(text, Style::default())].to_vec() }
     }
 
     pub fn raw<T: Into<Vec<(&'a str, Style)>>>(content: T) -> Self {
@@ -376,13 +375,13 @@ impl<'a> ViewingEntry<'a> {
             let id = self.subject.id.to_string();
 
             let text = CJKText::raw([
-                (self.subject.subject_type.disp(), Style::black().fg(Color::Blue)),
-                (" ", Style::black()),
-                (&id, Style::black()),
-                ("\n\n", Style::black()),
-                (self.subject.name.as_str(), Style::black().fg(Color::Yellow)),
-                ("\n", Style::black()),
-                (self.subject.name_cn.as_str(), Style::black().fg(Color::White)),
+                (self.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
+                (" ", Style::default()),
+                (&id, Style::default()),
+                ("\n\n", Style::default()),
+                (self.subject.name.as_str(), Style::default().fg(Color::Yellow)),
+                ("\n", Style::default()),
+                (self.subject.name_cn.as_str(), Style::default().fg(Color::White)),
             ].to_vec());
 
             cb(text)
@@ -416,9 +415,9 @@ impl<'a> Widget for ViewingEntry<'a> {
         }
 
         let bs = if self.selected {
-            Style::black().fg(Color::Green)
+            Style::default().fg(Color::Green)
         } else {
-            Style::black()
+            Style::default()
         };
 
         let mut b = Block::default().borders(Borders::ALL).border_style(bs);
@@ -499,7 +498,7 @@ impl<'a> Widget for Tabber<'a> {
             let mut text = CJKText::new(tab);
 
             if Some(i) == self.selected {
-                text.set_style(Style::black().fg(Color::Green));
+                text.set_style(Style::default().fg(Color::Green));
             }
 
             let width = text.oneline_min_width();
@@ -597,22 +596,22 @@ impl<'a> Widget for FilterList<'a> {
                 CJKText::new(VACANT_UNICODE)
             };
 
-            symbol.set_style(Style::black().fg(Color::Red));
+            symbol.set_style(Style::default().fg(Color::Red));
             symbol.draw(Rect::new(viewport.x, viewport.y + dy, 2, 1), buf);
 
             let width = viewport.width - 2;
             let text_style = if Some(&true) == self.state.get(i) {
-                Style::black().fg(Color::White)
+                Style::default().fg(Color::White)
             } else {
-                Style::black()
+                Style::default()
             };
 
             let count = self.count.and_then(|count| count.get(i)).map(|count| format!("({})", count));
             let mut text = if let Some(ref count) = count {
                 CJKText::raw([
                     (*tab, text_style),
-                    (" ", Style::black()),
-                    (count, Style::black().fg(Color::Yellow)),
+                    (" ", Style::default()),
+                    (count, Style::default().fg(Color::Yellow)),
                 ].to_vec())
             } else {
                 let mut t = CJKText::new(tab);
@@ -638,9 +637,9 @@ impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
             let count = self.count.and_then(|count| count.get(i)).map(|count| format!("({})", count));
             let text = if let Some(ref count) = count {
                 CJKText::raw([
-                    (*tab, Style::black()),
-                    (" ", Style::black()),
-                    (count, Style::black()),
+                    (*tab, Style::default()),
+                    (" ", Style::default()),
+                    (count, Style::default()),
                 ].to_vec())
             } else {
                 CJKText::new(tab)
@@ -702,9 +701,9 @@ impl Widget for ViewProgress {
             }
 
             let (style, symbol) = if (i as u64) < self.current {
-                (Style::black().fg(Color::White), symbols::block::FULL)
+                (Style::default().fg(Color::White), symbols::block::FULL)
             } else {
-                (Style::black(), SHADE)
+                (Style::default(), SHADE)
             };
 
             buf.get_mut(viewport.x + dx, viewport.y + text_height + dy)
