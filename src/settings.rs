@@ -1,13 +1,7 @@
 use crate::auth::{refresh_token, AppCred, AuthInfo, AuthResp, RespError};
 use chrono;
-use failure::Error;
 use futures::future::Future;
 use serde_derive::{Deserialize, Serialize};
-use serde_yaml;
-use std::convert::AsRef;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
 
 const REFRESH_RATIO: f64 = 0.2;
 
@@ -66,23 +60,6 @@ impl Settings {
             credentials: credentials,
             auth: auth,
         }
-    }
-
-    pub fn load_from<P: AsRef<Path>>(file: P) -> Result<Settings, Error> {
-        let mut buf = String::new();
-        File::open(file)?.read_to_string(&mut buf)?;
-
-        let settings: Settings = serde_yaml::from_str(&buf)?;
-
-        Ok(settings)
-    }
-
-    pub fn save_to<P: AsRef<Path>>(&self, file: P) -> Result<(), Error> {
-        let serialized = serde_yaml::to_vec(self)?;
-        let mut f = File::create(file)?;
-        f.write_all(&serialized)?;
-
-        Ok(())
     }
 
     pub fn cred(&self) -> &AppCred {

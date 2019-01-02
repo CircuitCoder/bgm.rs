@@ -18,15 +18,47 @@ use dirs;
 use failure::Error;
 use futures::future::Future;
 use std::convert::AsRef;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Write, Read};
 use std::path::{Path, PathBuf};
 use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
 use std::sync::{Arc, Mutex};
+use serde_yaml;
+use std::fs::File;
 
-fn default_path() -> impl AsRef<Path> {
+#[derive(Clone)]
+pub struct Args {
+    editor: String,
+    config: PathBuf,
+}
+
+trait SettingsExt : Sized {
+    fn load_from<P: AsRef<Path>>(file: P) -> Result<Self, Error>;
+    fn save_to<P: AsRef<Path>>(&self, file: P) -> Result<(), Error>;
+}
+
+impl SettingsExt for Settings {
+    fn load_from<P: AsRef<Path>>(file: P) -> Result<Settings, Error> {
+        let mut buf = String::new();
+        File::open(file)?.read_to_string(&mut buf)?;
+
+        let settings: Settings = serde_yaml::from_str(&buf)?;
+
+        Ok(settings)
+    }
+
+    fn save_to<P: AsRef<Path>>(&self, file: P) -> Result<(), Error> {
+        let serialized = serde_yaml::to_vec(self)?;
+        let mut f = File::create(file)?;
+        f.write_all(&serialized)?;
+
+        Ok(())
+    }
+}
+
+fn default_path() -> PathBuf {
     let mut buf = dirs::config_dir().unwrap_or(PathBuf::from("."));
     buf.push("bgmtty.yml");
     match buf.canonicalize() {
@@ -35,22 +67,20 @@ fn default_path() -> impl AsRef<Path> {
     }
 }
 
-fn load_settings() -> Result<Settings, Error> {
-    Settings::load_from(default_path())
+fn load_settings(config: &Path) -> Result<Settings, Error> {
+    Settings::load_from(config)
 }
 
-fn init_credentials() {
+fn init_credentials(config: &Path) {
     println!(
         "{}",
         "bgmTTY 通过 OAuth 协议向 bgm.tv 申请验证，所以我们需要有效的 OAuth 应用凭证。"
             .blue()
-            .bold()
     );
     println!(
         "{}",
         "您可以前往 https://bgm.tv/dev/app 进行申请, 或者使用既有的凭证。"
             .blue()
-            .bold()
     );
 
     let stdin = std::io::stdin();
@@ -78,26 +108,26 @@ fn init_credentials() {
 
     let cred = AppCred::new(id, secret);
     let settings = Settings::new(cred, None);
-    let path = default_path();
-    let parent = path.as_ref().parent();
+    let parent = config.parent();
 
     if let Some(parent) = parent {
-        std::fs::create_dir_all(parent).expect(&"Permission denied!".red().bold());
+        std::fs::create_dir_all(parent).expect(&"Permission denied!".red());
     }
 
     settings
-        .save_to(path)
-        .expect(&"Failed to save config!".red().bold());
+        .save_to(config)
+        .expect(&"Failed to save config!".red());
 
     print!(
         "{}",
         "完成了！现在您可以去掉 --init 参数重新启动 bgmTTY，进行 OAuth 认证。"
             .green()
-            .bold()
     )
 }
 
-fn new_auth(settings: Settings) -> Result<Settings, ()> {
+fn new_auth(settings: Settings, config: &Path) -> Result<Settings, ()> {
+    let config: PathBuf = config.into();
+
     let set = settings.clone();
     let cred = set.cred().clone();
     let (uri, fut) = request_code(cred.get_client_id());
@@ -115,8 +145,8 @@ fn new_auth(settings: Settings) -> Result<Settings, ()> {
             AuthResp::Success(info) => {
                 let newset = set.update_auth(info, redirect);
                 newset
-                    .save_to(default_path())
-                    .expect(&"Failed to save config!".red().bold());
+                    .save_to(config)
+                    .expect(&"Failed to save config!".red());
                 futures::future::ok(newset)
             }
             _ => {
@@ -124,7 +154,6 @@ fn new_auth(settings: Settings) -> Result<Settings, ()> {
                     "{}",
                     &"获取 Token 失败！请检查您的 Client ID/secret 并重试。"
                         .red()
-                        .bold()
                 );
                 futures::future::err(())
             }
@@ -133,7 +162,9 @@ fn new_auth(settings: Settings) -> Result<Settings, ()> {
     runtime.block_on(fut)
 }
 
-fn refresh_auth(settings: Settings) -> Result<Settings, ()> {
+fn refresh_auth(settings: Settings, config: &Path) -> Result<Settings, ()> {
+    let config: PathBuf = config.into();
+
     let set = settings.clone();
     let cred = set.cred().clone();
 
@@ -147,8 +178,8 @@ fn refresh_auth(settings: Settings) -> Result<Settings, ()> {
             Ok(handle) => {
                 let newset = set.update_handle(handle);
                 newset
-                    .save_to(default_path())
-                    .expect(&"Failed to save config!".red().bold());
+                    .save_to(config)
+                    .expect(&"Failed to save config!".red());
                 futures::future::ok(newset)
             }
             _ => {
@@ -156,7 +187,6 @@ fn refresh_auth(settings: Settings) -> Result<Settings, ()> {
                     "{}",
                     &"刷新 Token 失败！请检查您的 Client ID/secret 并重试。"
                         .red()
-                        .bold()
                 );
                 futures::future::err(())
             }
@@ -190,14 +220,35 @@ fn main() {
                 .long("auth-only")
                 .help("仅进行认证或刷新 Token"),
         )
+        .arg(
+            clap::Arg::with_name("config")
+                .long("config")
+                .short("c")
+                .value_name("FILE")
+                .takes_value(true)
+                .help("指定默认位置外的配置文件"),
+        )
+        .arg(
+            clap::Arg::with_name("editor")
+                .long("editor")
+                .short("e")
+                .value_name("COMMAND")
+                .takes_value(true)
+                .help("指定默认 Vim 以外的编辑器"),
+        )
         .get_matches();
 
+    let args = Args {
+        editor: matches.value_of("editor").unwrap_or_else(|| "vim").to_string(),
+        config: matches.value_of("config").map(Into::into).unwrap_or_else(|| default_path()),
+    };
+
     if matches.is_present("init") {
-        init_credentials();
+        init_credentials(&args.config);
         std::process::exit(0);
     }
 
-    let settings = match load_settings() {
+    let settings = match load_settings(&args.config) {
         Ok(set) => set,
         Err(e) => {
             println!("{}", e);
@@ -205,19 +256,17 @@ fn main() {
                 "{}",
                 "看上去这是您第一次使用 bgmTTY，或者"
                     .yellow()
-                    .bold()
             );
             println!(
                 "{}",
                 "bgmTTY 没法打开配置文件。\n"
                     .yellow()
-                    .bold()
             );
 
             println!("您可以带参数 --init 启动 bgmTTY 来创建一个新的配置文件，或者");
             println!(
                 "将已有的配置文件放到 {}",
-                default_path().as_ref().to_str().unwrap()
+                args.config.display()
             );
             std::process::exit(1);
         }
@@ -225,28 +274,28 @@ fn main() {
 
     if matches.is_present("logout") {
         settings.logout()
-            .save_to(default_path())
-            .expect(&"Failed to save config!".red().bold());
+            .save_to(&args.config)
+            .expect(&"Failed to save config!".red());
 
         return;
     }
 
     let settings = if let Some(auth) = settings.auth() {
         if auth.outdated() {
-            new_auth(settings)
+            new_auth(settings, &args.config)
         } else if auth.requires_refresh() || matches.is_present("refresh") {
-            refresh_auth(settings)
+            refresh_auth(settings, &args.config)
         } else {
             Ok(settings)
         }
     } else {
-        new_auth(settings)
+        new_auth(settings, &args.config)
     };
 
     let settings = if let Ok(s) = settings {
         s
     } else {
-        println!("{}", "验证失败！可能是风把网线刮断了？".red().bold());
+        println!("{}", "验证失败！可能是风把网线刮断了？".red());
         std::process::exit(1);
     };
 
@@ -255,7 +304,7 @@ fn main() {
     }
 
     let client = Client::new(settings);
-    bootstrap(client).expect("Terminal failed");
+    bootstrap(client, args).expect("Terminal failed");
 }
 
 trait RectExt {
@@ -350,7 +399,7 @@ impl SubjectTypeExt for SubjectType {
     }
 }
 
-fn bootstrap(client: Client) -> Result<(), failure::Error> {
+fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
     let stdout = std::io::stdout().into_raw_mode()?;
     let stdout = termion::input::MouseTerminal::from(stdout);
     let stdout = termion::screen::AlternateScreen::from(stdout);
@@ -369,7 +418,7 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
     kickoff_listener(evtx, stdin_lock.clone());
 
     let mut app = AppState::create(apptx, client);
-    let mut ui = UIState::with(stdin_lock);
+    let mut ui = UIState::with(&args, stdin_lock);
 
     loop {
         // Process Splits

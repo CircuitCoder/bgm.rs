@@ -2,7 +2,7 @@ use bgmtv::client::{CollectionEntry, CollectionDetail, CollectionStatus, Subject
 use crossbeam_channel::{Sender};
 use std::sync::{Arc, Mutex};
 use futures::future::Future;
-use crate::CollectionStatusExt;
+use crate::{CollectionStatusExt, Args};
 use std::io::{Read, Write};
 use std::ops::Deref;
 use std::time::{Duration, Instant};
@@ -593,7 +593,7 @@ impl LongCommand {
 
 const HELP_THRESHOLD: usize = 3;
 
-pub struct UIState {
+pub struct UIState<'u> {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) tab: usize,
     pub(crate) tab_scroll: ScrollState,
@@ -616,10 +616,12 @@ pub struct UIState {
 
     last_input_meaningless: bool,
     meaningless_count: usize,
+
+    args: &'u Args,
 }
 
-impl UIState {
-    pub fn with(stdin_lock: Arc<Mutex<()>>) -> UIState {
+impl<'u> UIState<'u> {
+    pub fn with(args: &'u Args, stdin_lock: Arc<Mutex<()>>) -> UIState<'u> {
         UIState {
             tabs: [
                 Tab::Collection,
@@ -645,6 +647,8 @@ impl UIState {
 
             last_input_meaningless: false,
             meaningless_count: 0,
+
+            args,
         }
     }
 
@@ -1275,7 +1279,7 @@ impl UIState {
 
         let status = {
             let _guard = self.stdin_lock.lock().unwrap();
-            let result = std::process::Command::new("vim").arg(path.deref()).status();
+            let result = std::process::Command::new(&self.args.editor).arg(path.deref()).status();
             if result.is_err() {
                 app.publish_message("找不到编辑器啦！参数 -e 指定编辑器，或者试试 Vim 嘛？".to_string());
             }
