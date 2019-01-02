@@ -552,6 +552,7 @@ pub enum UIEvent {
 pub enum PendingUIEvent {
     Click(u16, u16, termion::event::MouseButton),
     ScrollIntoView(usize),
+    KBTabSelect, // Requires scroll
     Quit,
     Reset,
 }
@@ -793,11 +794,13 @@ impl UIState {
                     match ev {
                         UIEvent::Key(Key::Char('t')) => {
                             self.rotate_tab();
+                            self.pending = Some(PendingUIEvent::KBTabSelect);
                             self.command = LongCommand::Absent;
                             return self;
                         }
                         UIEvent::Key(Key::Char('T')) => {
                             self.rotate_tab_rev();
+                            self.pending = Some(PendingUIEvent::KBTabSelect);
                             self.command = LongCommand::Absent;
                             return self;
                         }
@@ -832,14 +835,20 @@ impl UIState {
                         UIEvent::Key(Key::Char('\n')) => {
                             match cmd as &str {
                                 "qa" => self.pending = Some(PendingUIEvent::Quit),
-                                "q" => self.close_tab(self.tab),
+                                "q" => {
+                                    self.close_tab(self.tab);
+                                    self.pending = Some(PendingUIEvent::KBTabSelect);
+                                }
                                 "help" => self.help = !self.help,
                                 "tabe search" => self.tab = self.open_tab(Tab::Search{ text: String::new() }, None),
                                 "tabe coll" => self.tab = self.open_tab(Tab::Collection, None),
                                 ref e if e.starts_with("tabm ") => {
                                     let index = e[5..].parse::<usize>();
                                     match index {
-                                        Ok(index) => self.tab = self.move_tab(index),
+                                        Ok(index) => {
+                                            self.tab = self.move_tab(index);
+                                            self.pending = Some(PendingUIEvent::KBTabSelect);
+                                        }
                                         _ => app.publish_message(format!("{} 是不认识的数字!", &e[5..])),
                                     }
                                 }

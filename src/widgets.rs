@@ -59,8 +59,8 @@ impl<'a> Scroll<'a> {
     }
 
     pub fn scroll_into_view(&mut self, index: usize) {
-        let index = if index > self.content.len() {
-            self.content.len()
+        let index = if index >= self.content.len() {
+            self.content.len() - 1
         } else {
             index
         };
@@ -120,8 +120,7 @@ impl<'a> Widget for Scroll<'a> {
                 }
 
                 for x in 0..width {
-                    let cell = subbuf.get(x, iy);
-                    std::mem::replace(buf.get_mut(area.x + x, area.y + y), cell.clone());
+                    *buf.get_mut(area.x + x, area.y + y) = subbuf.get(x, iy).clone();
                 }
             }
 
@@ -462,6 +461,8 @@ impl<'a> Intercept<ViewingEntryEvent> for ViewingEntry<'a> {
 pub enum TabberEvent {
     Select(usize),
     Close(usize),
+    ScrollLeft,
+    ScrollRight,
 }
 
 pub struct Tabber<'a> {
@@ -490,11 +491,38 @@ impl<'a> Tabber<'a> {
     pub fn inner_width(&self) -> u16 {
         self.tabs.iter().fold(0, |acc, x| acc + CJKText::new(x).oneline_min_width() + 2)
     }
+
+    pub fn scroll_into_view(&mut self, index: usize) {
+        let index = if index >= self.tabs.len() {
+            self.tabs.len() - 1
+        } else {
+            index
+        };
+
+        let mut start = 0;
+        for i in 0..index {
+            start += CJKText::new(self.tabs[i]).oneline_min_width() + 2;
+        }
+
+        let end = start + CJKText::new(self.tabs[index]).oneline_min_width() + 2;
+
+        let new_offset = if start < self.scroll.get() {
+            start
+        } else if end > self.scroll.get() + self.bound.width {
+            end - self.bound.width
+        } else {
+            self.scroll.get()
+        };
+
+        self.scroll.set(new_offset);
+    }
 }
 
 impl<'a> Widget for Tabber<'a> {
     fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
         let mut dx = 1;
+        let scroll = self.scroll.get();
+        eprintln!("{}", scroll);
 
         for (i, tab) in self.tabs.iter().enumerate() {
             let mut text = CJKText::new(tab);
@@ -505,20 +533,39 @@ impl<'a> Widget for Tabber<'a> {
 
             let width = text.oneline_min_width();
 
-            if viewport.width <= dx { // Already overflow
+            if viewport.width + scroll <= dx { // Already overflow
                 break;
             }
 
-            let maxwidth = viewport.width - dx;
+            let width = std::cmp::min(width, viewport.width + scroll - dx);
 
-            let width = std::cmp::min(width, maxwidth);
+            let area = Rect::new(0, 0, width, viewport.height);
+            let mut subbuf = Buffer::empty(area);
+            text.draw(area, &mut subbuf);
 
-            if width == 0 {
-                break;
+            // We cannot overflow the viewport here, because width is bounded
+            for y in 0..viewport.height {
+
+                let mut is_start = true;
+
+                for x in 0..width {
+                    if x + dx < scroll {
+                        continue;
+                    }
+
+                    let cell = subbuf.get(x, y);
+                    let target = buf.get_mut(x + dx + viewport.x - scroll, y + viewport.y);
+                    *target = subbuf.get(x, y).clone();
+
+                    // When doing horizontal scroll, we may break large unicode graphemes
+                    if is_start && cell.symbol == "" {
+                        target.set_symbol(" ");
+                    } else {
+                        is_start = false;
+                    }
+
+                }
             }
-
-            let area = Rect::new(viewport.x + dx, viewport.y, width, viewport.height);
-            text.draw(area, buf);
 
             dx += width + 2;
         }
@@ -527,7 +574,13 @@ impl<'a> Widget for Tabber<'a> {
 
 impl<'a> Intercept<TabberEvent> for Tabber<'a> {
     fn intercept(&mut self, x: u16, _: u16, btn: MouseButton) -> Option<TabberEvent> {
-        let dx = x - self.bound.x;
+        match btn {
+            MouseButton::WheelUp => return Some(TabberEvent::ScrollLeft),
+            MouseButton::WheelDown => return Some(TabberEvent::ScrollRight),
+            _ => {}
+        }
+
+        let dx = x - self.bound.x + self.scroll.get();
         let mut counter = 0;
 
         for (i, tab) in self.tabs.iter().enumerate() {

@@ -462,13 +462,20 @@ fn bootstrap(client: Client) -> Result<(), failure::Error> {
             let tab_name_borrows = tab_names.iter().map(|e| e.as_str()).collect::<Vec<_>>();
             let mut tabber = Tabber::with(tab_name_borrows.as_slice(), &mut ui.tab_scroll).select(ui.tab);
             tabber.set_bound(tab_inner);
+            tabber.cap_bound();
             tabber.render(&mut f, tab_inner);
+
+            if let Some(PendingUIEvent::KBTabSelect) = pending {
+                tabber.scroll_into_view(ui.tab);
+            }
 
             if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
                 if tab_inner.contains(x, y) {
                     match tabber.intercept(x, y, btn) {
                         Some(TabberEvent::Select(i)) => ui.select_tab(i),
                         Some(TabberEvent::Close(i)) => ui.close_tab(i),
+                        Some(TabberEvent::ScrollLeft) => ui.tab_scroll.delta(-1),
+                        Some(TabberEvent::ScrollRight) => ui.tab_scroll.delta(1),
                         _ => {}
                     }
                 }
