@@ -239,7 +239,7 @@ impl<'a> CJKText<'a> {
     pub fn oneline_min_width(&self) -> u16 {
         let mut result = 0;
         for (t, _) in self.content.iter() {
-            result += t.width_cjk() as u16;
+            result += t.width() as u16;
         }
 
         result
@@ -280,7 +280,7 @@ impl<'a> Widget for CJKText<'a> {
 
                 last_present = true;
 
-                let token_width = token.width_cjk() as u16;
+                let token_width = token.width() as u16;
                 if token_width + dx > area.width {
                     dx = 0;
                     dy += 1;
@@ -330,7 +330,7 @@ impl<'a> DynHeight for CJKText<'a> {
 
                 last_present = true;
 
-                let token_width = token.width_cjk() as u16;
+                let token_width = token.width() as u16;
                 if token_width + acc > width {
                     acc = token_width;
                     result += 1;
