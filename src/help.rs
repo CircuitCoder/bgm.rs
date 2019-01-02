@@ -1,5 +1,6 @@
 use crate::state::{UIState, Tab};
 use crate::widgets::CJKText;
+use crate::StyleExt;
 use tui::style::{Style,Modifier,Color};
 
 pub struct HelpEntry(
@@ -20,13 +21,13 @@ impl<'a> Into<CJKText<'static>> for &'a HelpEntry {
 
         for i in 0..self.0.len() {
             if i != 0 {
-                result.push((" / ", Style::default()));
+                result.push((" / ", Style::black()));
             }
-            result.push((self.0[i], Style::default().modifier(Modifier::Bold).fg(Color::Red)));
+            result.push((self.0[i], Style::black().modifier(Modifier::Bold).fg(Color::Red)));
         }
 
-        result.push((": ", Style::default()));
-        result.push((self.1, Style::default()));
+        result.push((": ", Style::black()));
+        result.push((self.1, Style::black()));
 
         CJKText::raw(result)
     }
