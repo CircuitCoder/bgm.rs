@@ -1057,7 +1057,7 @@ impl UIState {
                 let id = self.active_tab().subject_id().unwrap();
                 if let FetchResult::Direct(Some(mut coll)) = app.fetch_collection_detail(id) {
                     let initial = coll.tag.join("\n");
-                    if let Ok(Some(content)) = self.edit(&initial) {
+                    if let Ok(Some(content)) = self.edit(&initial, app) {
                         let segs = content.lines().filter(|e| e.len() > 0).map(|e| e.to_string()).collect::<Vec<String>>();
                         coll.tag = segs;
                         app.update_collection_detail(id, coll.status.clone(), Some(coll));
@@ -1068,7 +1068,7 @@ impl UIState {
             UIEvent::Key(Key::Char('c')) if self.active_tab().is_subject() => {
                 let id = self.active_tab().subject_id().unwrap();
                 if let FetchResult::Direct(Some(mut coll)) = app.fetch_collection_detail(id) {
-                    if let Ok(Some(content)) = self.edit(&coll.comment) {
+                    if let Ok(Some(content)) = self.edit(&coll.comment, app) {
                         if content != coll.comment {
                             coll.comment = content;
                             app.update_collection_detail(id, coll.status.clone(), Some(coll));
@@ -1266,7 +1266,7 @@ impl UIState {
      * this will effectively blocks the rendering, so bgmTTY won't interfere with
      * whatever editor the user uses
      */
-    pub fn edit(&mut self, content: &str) -> std::io::Result<Option<String>>  {
+    pub fn edit(&mut self, content: &str, app: &mut AppState) -> std::io::Result<Option<String>>  {
         self.pending = Some(PendingUIEvent::Reset);
 
         let mut temp = tempfile::NamedTempFile::new()?;
@@ -1275,7 +1275,11 @@ impl UIState {
 
         let status = {
             let _guard = self.stdin_lock.lock().unwrap();
-            std::process::Command::new("vim").arg(path.deref()).status()?
+            let result = std::process::Command::new("vim").arg(path.deref()).status();
+            if result.is_err() {
+                app.publish_message("找不到编辑器啦！参数 -e 指定编辑器，或者试试 Vim 嘛？".to_string());
+            }
+            result?
         };
 
         if status.success() {
