@@ -18,6 +18,6 @@ deploy:
   file_glob: true
   file: target/release/bgmtty-*
   skip_cleanup: true
-  draft: true
   on:
     repo: CircuitCoder/bgm.rs
+    tags: true
