@@ -1,13 +1,15 @@
-use bgmtv::client::{CollectionEntry, CollectionDetail, CollectionStatus, SubjectType, SubjectSmall, Client};
-use crossbeam_channel::{Sender};
-use std::sync::{Arc, Mutex};
+use crate::{Args, CollectionStatusExt};
+use bgmtv::client::{
+    Client, CollectionDetail, CollectionEntry, CollectionStatus, SubjectSmall, SubjectType,
+};
+use crossbeam_channel::Sender;
 use futures::future::Future;
-use crate::{CollectionStatusExt, Args};
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use std::collections::hash_map;
 
 #[derive(Clone)]
 pub enum FetchResult<T> {
@@ -22,7 +24,7 @@ impl<T> FetchResult<T> {
             FetchResult::Direct(t) => match another {
                 FetchResult::Deferred => FetchResult::Deferred,
                 FetchResult::Direct(u) => FetchResult::Direct((t, u)),
-            }
+            },
         }
     }
 }
@@ -109,10 +111,8 @@ impl AppState {
         let mut guard = self.inner.lock().unwrap();
         if self.fetching_collection {
             match guard.collection {
-                InnerState::Fetched(_, ref entries) =>
-                    return FetchResult::Direct(entries.clone()),
-                InnerState::Fetching(_) =>
-                    return FetchResult::Deferred,
+                InnerState::Fetched(_, ref entries) => return FetchResult::Direct(entries.clone()),
+                InnerState::Fetching(_) => return FetchResult::Deferred,
                 _ => {
                     // Else: discarded, restart fetch
                     guard.collection = InnerState::Fetching(());
@@ -140,7 +140,13 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+            .map_err(move |e| {
+                err_handle
+                    .lock()
+                    .unwrap()
+                    .messages
+                    .push(format!("请求失败！{}", e))
+            });
 
         self.rt.spawn(fut);
 
@@ -149,7 +155,9 @@ impl AppState {
 
     pub fn update_progress(&mut self, coll: &CollectionEntry, ep: Option<u64>, vol: Option<u64>) {
         let mut guard = self.inner.lock().unwrap();
-        guard.messages.push(format!("更新进度: {}...", coll.subject.id));
+        guard
+            .messages
+            .push(format!("更新进度: {}...", coll.subject.id));
         guard.notifier.send(()).unwrap();
 
         let fut = self.client.progress(coll, ep, vol);
@@ -166,7 +174,13 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+            .map_err(move |e| {
+                err_handle
+                    .lock()
+                    .unwrap()
+                    .messages
+                    .push(format!("请求失败！{}", e))
+            });
 
         self.rt.spawn(fut);
     }
@@ -178,25 +192,24 @@ impl AppState {
 
     pub fn last_message(&self) -> String {
         let msgs = &self.inner.lock().unwrap().messages;
-        msgs[msgs.len()-1].clone()
+        msgs[msgs.len() - 1].clone()
     }
 
     pub fn fetch_collection_detail(&mut self, id: u64) -> FetchResult<Option<CollectionDetail>> {
         let mut guard = self.inner.lock().unwrap();
         let entry = guard.collection_detail.entry(id);
         match entry {
-            hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
-            hash_map::Entry::Occupied(mut entry) =>
-                match entry.get_mut() {
-                    InnerState::Fetched(_, ref result) =>
-                        return FetchResult::Direct(result.clone()),
-                    InnerState::Fetching(_) =>
-                        return FetchResult::Deferred,
-                    value => {
-                        // Else: discarded or fetching another, restart fetch
-                        *value = InnerState::Fetching(());
-                    }
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(InnerState::Fetching(()));
+            }
+            hash_map::Entry::Occupied(mut entry) => match entry.get_mut() {
+                InnerState::Fetched(_, ref result) => return FetchResult::Direct(result.clone()),
+                InnerState::Fetching(_) => return FetchResult::Deferred,
+                value => {
+                    // Else: discarded or fetching another, restart fetch
+                    *value = InnerState::Fetching(());
                 }
+            },
         }
 
         guard.messages.push("获取收藏状态...".to_string());
@@ -211,21 +224,34 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                inner.collection_detail.insert(id, InnerState::Fetched((), resp));
+                inner
+                    .collection_detail
+                    .insert(id, InnerState::Fetched((), resp));
                 inner.messages.push("收藏加载完成！".to_string());
                 inner
                     .notifier
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+            .map_err(move |e| {
+                err_handle
+                    .lock()
+                    .unwrap()
+                    .messages
+                    .push(format!("请求失败！{}", e))
+            });
 
         self.rt.spawn(fut);
 
         FetchResult::Deferred
     }
 
-    pub fn update_collection_detail(&mut self, id: u64, status: CollectionStatus, original: Option<CollectionDetail>) {
+    pub fn update_collection_detail(
+        &mut self,
+        id: u64,
+        status: CollectionStatus,
+        original: Option<CollectionDetail>,
+    ) {
         let mut guard = self.inner.lock().unwrap();
         guard.messages.push("更新更新...".to_string());
         guard.notifier.send(()).unwrap();
@@ -239,14 +265,22 @@ impl AppState {
             .map(move |resp| {
                 let mut inner = handle.lock().unwrap();
 
-                inner.collection_detail.insert(id, InnerState::Fetched((), Some(resp)));
+                inner
+                    .collection_detail
+                    .insert(id, InnerState::Fetched((), Some(resp)));
                 inner.messages.push("收藏更新完成！".to_string());
                 inner
                     .notifier
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+            .map_err(move |e| {
+                err_handle
+                    .lock()
+                    .unwrap()
+                    .messages
+                    .push(format!("请求失败！{}", e))
+            });
 
         self.rt.spawn(fut);
     }
@@ -255,18 +289,17 @@ impl AppState {
         let mut guard = self.inner.lock().unwrap();
         let entry = guard.subject.entry(id);
         match entry {
-            hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
-            hash_map::Entry::Occupied(mut entry) =>
-                match entry.get_mut() {
-                    InnerState::Fetched(_, ref result) =>
-                        return FetchResult::Direct(result.clone()),
-                    InnerState::Fetching(_) =>
-                        return FetchResult::Deferred,
-                    value => {
-                        // Else: discarded or fetching another, restart fetch
-                        *value = InnerState::Fetching(());
-                    }
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(InnerState::Fetching(()));
+            }
+            hash_map::Entry::Occupied(mut entry) => match entry.get_mut() {
+                InnerState::Fetched(_, ref result) => return FetchResult::Direct(result.clone()),
+                InnerState::Fetching(_) => return FetchResult::Deferred,
+                value => {
+                    // Else: discarded or fetching another, restart fetch
+                    *value = InnerState::Fetching(());
                 }
+            },
         }
 
         guard.messages.push(format!("获取条目中: {}...", id));
@@ -288,14 +321,23 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+            .map_err(move |e| {
+                err_handle
+                    .lock()
+                    .unwrap()
+                    .messages
+                    .push(format!("请求失败！{}", e))
+            });
 
         self.rt.spawn(fut);
 
         FetchResult::Deferred
     }
 
-    fn populate_search<'a>(&self, shallow: &'a ShallowSearchResult) -> FetchResult<PopulatedSearchResult> {
+    fn populate_search<'a>(
+        &self,
+        shallow: &'a ShallowSearchResult,
+    ) -> FetchResult<PopulatedSearchResult> {
         let mut list = Vec::with_capacity(shallow.ids.len());
         let count = shallow.count;
 
@@ -309,28 +351,32 @@ impl AppState {
             }
         }
 
-        FetchResult::Direct(PopulatedSearchResult{ count, list })
+        FetchResult::Direct(PopulatedSearchResult { count, list })
     }
 
-    pub fn fetch_search(&mut self, search: &str, index: usize) -> FetchResult<PopulatedSearchResult> {
+    pub fn fetch_search(
+        &mut self,
+        search: &str,
+        index: usize,
+    ) -> FetchResult<PopulatedSearchResult> {
         let mut guard = self.inner.lock().unwrap();
         let entry = guard.search.entry((search.to_string(), index));
         match entry {
-            hash_map::Entry::Vacant(entry) => { entry.insert(InnerState::Fetching(())); }
-            hash_map::Entry::Occupied(mut entry) =>
-                match entry.get_mut() {
-                    InnerState::Fetched(_, ref result) => {
-                        let cloned = result.clone();
-                        drop(guard);
-                        return self.populate_search(&cloned);
-                    }
-                    InnerState::Fetching(_) =>
-                        return FetchResult::Deferred,
-                    value => {
-                        // Else: discarded or fetching another, restart fetch
-                        *value = InnerState::Fetching(());
-                    }
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(InnerState::Fetching(()));
+            }
+            hash_map::Entry::Occupied(mut entry) => match entry.get_mut() {
+                InnerState::Fetched(_, ref result) => {
+                    let cloned = result.clone();
+                    drop(guard);
+                    return self.populate_search(&cloned);
                 }
+                InnerState::Fetching(_) => return FetchResult::Deferred,
+                value => {
+                    // Else: discarded or fetching another, restart fetch
+                    *value = InnerState::Fetching(());
+                }
+            },
         }
 
         guard.messages.push(format!("搜索中: {}...", search));
@@ -353,10 +399,15 @@ impl AppState {
 
                 for subject in resp.list.into_iter() {
                     ids.push(subject.id);
-                    inner.subject.insert(subject.id, InnerState::Fetched((), subject));
+                    inner
+                        .subject
+                        .insert(subject.id, InnerState::Fetched((), subject));
                 }
 
-                inner.search.insert((search, index), InnerState::Fetched((), ShallowSearchResult{ count, ids }));
+                inner.search.insert(
+                    (search, index),
+                    InnerState::Fetched((), ShallowSearchResult { count, ids }),
+                );
 
                 inner.messages.push("搜索完成！".to_string());
                 inner
@@ -364,7 +415,13 @@ impl AppState {
                     .send(())
                     .expect("Unable to notify the main thread");
             })
-            .map_err(move |e| err_handle.lock().unwrap().messages.push(format!("请求失败！{}", e)));
+            .map_err(move |e| {
+                err_handle
+                    .lock()
+                    .unwrap()
+                    .messages
+                    .push(format!("请求失败！{}", e))
+            });
 
         self.rt.spawn(fut);
 
@@ -376,23 +433,34 @@ impl AppState {
     }
 
     pub fn refresh_search(&mut self, search: String, index: usize) {
-        self.inner.lock().unwrap().search.entry((search, index)).and_modify(|s| *s = InnerState::Discarded);
+        self.inner
+            .lock()
+            .unwrap()
+            .search
+            .entry((search, index))
+            .and_modify(|s| *s = InnerState::Discarded);
     }
 
     pub fn refresh_subject(&mut self, id: u64) {
-        self.inner.lock().unwrap().subject.entry(id).and_modify(|s| *s = InnerState::Discarded);
+        self.inner
+            .lock()
+            .unwrap()
+            .subject
+            .entry(id)
+            .and_modify(|s| *s = InnerState::Discarded);
     }
 
     pub fn refresh_collection_detail(&mut self, id: u64) {
-        self.inner.lock().unwrap().collection_detail.entry(id).and_modify(|s| *s = InnerState::Discarded);
+        self.inner
+            .lock()
+            .unwrap()
+            .collection_detail
+            .entry(id)
+            .and_modify(|s| *s = InnerState::Discarded);
     }
 }
 
-pub const SELECTS: [SubjectType; 3] = [
-    SubjectType::Anime,
-    SubjectType::Book,
-    SubjectType::Real,
-];
+pub const SELECTS: [SubjectType; 3] = [SubjectType::Anime, SubjectType::Book, SubjectType::Real];
 
 #[derive(Clone)]
 pub struct ScrollState {
@@ -455,14 +523,14 @@ impl FocusState {
 
     pub fn next(&mut self) {
         match self.focus {
-            Some(f) => self.set(Some(f+1)),
+            Some(f) => self.set(Some(f + 1)),
             None => self.set(Some(0)),
         }
     }
 
     pub fn prev(&mut self) {
         match self.focus {
-            Some(f) if f > 0 => self.set(Some(f-1)),
+            Some(f) if f > 0 => self.set(Some(f - 1)),
             _ => {}
         }
     }
@@ -472,16 +540,16 @@ impl FocusState {
 pub enum Tab {
     Collection,
 
-    Search{
+    Search {
         text: String,
     },
 
-    Subject{
+    Subject {
         id: u64,
         scroll: ScrollState,
     },
 
-    SearchResult{
+    SearchResult {
         search: String,
         index: usize,
         scroll: ScrollState,
@@ -494,15 +562,17 @@ impl Tab {
         // TODO: truncate
         match self {
             Tab::Collection => "格子".to_string(),
-            Tab::Search{ .. } => "搜索".to_string(),
-            Tab::Subject{ id, .. } => format!("条目: {}", id),
-            Tab::SearchResult{ search, index, .. } => format!("搜索: {} / {}", search, index+1),
+            Tab::Search { .. } => "搜索".to_string(),
+            Tab::Subject { id, .. } => format!("条目: {}", id),
+            Tab::SearchResult { search, index, .. } => {
+                format!("搜索: {} / {}", search, index + 1)
+            }
         }
     }
 
     pub fn is_search(&self) -> bool {
         match self {
-            Tab::Search{ .. }=> true,
+            Tab::Search { .. } => true,
             _ => false,
         }
     }
@@ -516,27 +586,27 @@ impl Tab {
 
     pub fn is_subject(&self) -> bool {
         match self {
-            Tab::Subject{ .. } => true,
+            Tab::Subject { .. } => true,
             _ => false,
         }
     }
 
     pub fn is_search_result(&self) -> bool {
         match self {
-            Tab::SearchResult{ .. } => true,
+            Tab::SearchResult { .. } => true,
             _ => false,
         }
     }
     pub fn subject_id(&self) -> Option<u64> {
         match self {
-            Tab::Subject{ id, .. } => Some(*id),
+            Tab::Subject { id, .. } => Some(*id),
             _ => None,
         }
     }
 
     pub fn get_focus(&self) -> Option<usize> {
         match self {
-            Tab::SearchResult{ focus, .. } => focus.get(),
+            Tab::SearchResult { focus, .. } => focus.get(),
             _ => None,
         }
     }
@@ -625,10 +695,13 @@ impl<'u> UIState<'u> {
         UIState {
             tabs: [
                 Tab::Collection,
-                Tab::Search{ text: String::new() },
-            ].to_vec(),
+                Tab::Search {
+                    text: String::new(),
+                },
+            ]
+            .to_vec(),
             tab: 0,
-            tab_scroll:Default::default(),
+            tab_scroll: Default::default(),
 
             filters: [true; SELECTS.len()],
             scroll: Default::default(),
@@ -701,7 +774,7 @@ impl<'u> UIState<'u> {
             dest -= 1;
         }
         self.tabs.insert(dest, tab);
-        
+
         dest
     }
 
@@ -794,185 +867,187 @@ impl<'u> UIState<'u> {
             }
 
             match self.command {
-                LongCommand::Graphical => {
-                    match ev {
-                        UIEvent::Key(Key::Char('t')) => {
-                            self.rotate_tab();
-                            self.pending = Some(PendingUIEvent::KBTabSelect);
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        UIEvent::Key(Key::Char('T')) => {
-                            self.rotate_tab_rev();
-                            self.pending = Some(PendingUIEvent::KBTabSelect);
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        UIEvent::Key(Key::Char('g')) => {
-                            match self.active_tab_mut() {
-                                Tab::Collection => {
-                                    self.scroll.set(0);
-                                    self.focus.set(Some(0));
-                                }
-                                Tab::Subject{ ref mut scroll, .. } => {
-                                    scroll.set(0);
-                                }
-                                Tab::SearchResult{ ref mut scroll, ref mut focus, .. } => {
-                                    scroll.set(0);
-                                    focus.set(Some(0));
-                                }
-                                _ => {}
-                            }
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        UIEvent::Key(_) => {
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        _ => {}
+                LongCommand::Graphical => match ev {
+                    UIEvent::Key(Key::Char('t')) => {
+                        self.rotate_tab();
+                        self.pending = Some(PendingUIEvent::KBTabSelect);
+                        self.command = LongCommand::Absent;
+                        return self;
                     }
-                }
+                    UIEvent::Key(Key::Char('T')) => {
+                        self.rotate_tab_rev();
+                        self.pending = Some(PendingUIEvent::KBTabSelect);
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    UIEvent::Key(Key::Char('g')) => {
+                        match self.active_tab_mut() {
+                            Tab::Collection => {
+                                self.scroll.set(0);
+                                self.focus.set(Some(0));
+                            }
+                            Tab::Subject { ref mut scroll, .. } => {
+                                scroll.set(0);
+                            }
+                            Tab::SearchResult {
+                                ref mut scroll,
+                                ref mut focus,
+                                ..
+                            } => {
+                                scroll.set(0);
+                                focus.set(Some(0));
+                            }
+                            _ => {}
+                        }
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    UIEvent::Key(_) => {
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    _ => {}
+                },
 
-                LongCommand::Command(ref mut cmd) => {
-                    match ev {
-                        UIEvent::Key(Key::Char('\n')) => {
-                            match cmd as &str {
-                                "qa" => self.pending = Some(PendingUIEvent::Quit),
-                                "q" => {
-                                    self.close_tab(self.tab);
-                                    self.pending = Some(PendingUIEvent::KBTabSelect);
-                                }
-                                "help" => self.help = !self.help,
-                                "tabe search" => self.tab = self.open_tab(Tab::Search{ text: String::new() }, None),
-                                "tabe coll" => self.tab = self.open_tab(Tab::Collection, None),
-                                ref e if e.starts_with("tabm ") => {
-                                    let index = e[5..].parse::<usize>();
-                                    match index {
-                                        Ok(index) => {
-                                            self.tab = self.move_tab(index);
-                                            self.pending = Some(PendingUIEvent::KBTabSelect);
-                                        }
-                                        _ => app.publish_message(format!("{} 是不认识的数字!", &e[5..])),
+                LongCommand::Command(ref mut cmd) => match ev {
+                    UIEvent::Key(Key::Char('\n')) => {
+                        match cmd as &str {
+                            "qa" => self.pending = Some(PendingUIEvent::Quit),
+                            "q" => {
+                                self.close_tab(self.tab);
+                                self.pending = Some(PendingUIEvent::KBTabSelect);
+                            }
+                            "help" => self.help = !self.help,
+                            "tabe search" => {
+                                self.tab = self.open_tab(
+                                    Tab::Search {
+                                        text: String::new(),
+                                    },
+                                    None,
+                                )
+                            }
+                            "tabe coll" => self.tab = self.open_tab(Tab::Collection, None),
+                            ref e if e.starts_with("tabm ") => {
+                                let index = e[5..].parse::<usize>();
+                                match index {
+                                    Ok(index) => {
+                                        self.tab = self.move_tab(index);
+                                        self.pending = Some(PendingUIEvent::KBTabSelect);
                                     }
-                                }
-                                _ => app.publish_message("是不认识的命令!".to_string()),
-                            }
-
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        UIEvent::Key(Key::Backspace) => {
-                            if cmd.pop().is_none() {
-                                self.command = LongCommand::Absent;
-                            }
-
-                            return self;
-                        }
-                        UIEvent::Key(Key::Char(c)) => {
-                            cmd.push(c);
-                            return self
-                        }
-                        UIEvent::Key(_) => return self,
-                        _ => {}
-                    }
-                }
-
-                LongCommand::Toggle => {
-                    match ev {
-                        UIEvent::Key(Key::Char(i @ '1'...'9')) => {
-                            let i = i.to_digit(10).unwrap() as usize;
-                            let collection = app.fetch_collection().into();
-                            self.toggle_filter(i-1, &collection);
-
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        UIEvent::Key(_) => {
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        _ => {}
-                    }
-                }
-
-                LongCommand::EditRating(id, ref coll, ref mut rating) => {
-                    match ev {
-                        UIEvent::Key(Key::Char('\n')) => {
-                            if let Ok(mut digit) = rating.parse::<u8>() {
-                                if digit > 10 {
-                                    digit = 10;
-                                }
-
-                                if coll.rating != digit {
-                                    let mut coll = coll.clone();
-                                    coll.rating = digit;
-                                    app.update_collection_detail(id, coll.status.clone(), Some(coll));
+                                    _ => app.publish_message(format!(
+                                        "{} 是不认识的数字!",
+                                        &e[5..]
+                                    )),
                                 }
                             }
+                            _ => app.publish_message("是不认识的命令!".to_string()),
+                        }
 
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    UIEvent::Key(Key::Backspace) => {
+                        if cmd.pop().is_none() {
                             self.command = LongCommand::Absent;
-                            return self;
                         }
-                        UIEvent::Key(Key::Backspace) => {
-                            rating.pop();
-                            return self;
-                        }
-                        UIEvent::Key(Key::Char(c @ '0'...'9')) => {
-                            if rating == "" || (rating == "1" && c == '0') {
-                                rating.push(c);
-                            } else if rating == "0" {
-                                *rating = c.to_string();
+
+                        return self;
+                    }
+                    UIEvent::Key(Key::Char(c)) => {
+                        cmd.push(c);
+                        return self;
+                    }
+                    UIEvent::Key(_) => return self,
+                    _ => {}
+                },
+
+                LongCommand::Toggle => match ev {
+                    UIEvent::Key(Key::Char(i @ '1'...'9')) => {
+                        let i = i.to_digit(10).unwrap() as usize;
+                        let collection = app.fetch_collection().into();
+                        self.toggle_filter(i - 1, &collection);
+
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    UIEvent::Key(_) => {
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    _ => {}
+                },
+
+                LongCommand::EditRating(id, ref coll, ref mut rating) => match ev {
+                    UIEvent::Key(Key::Char('\n')) => {
+                        if let Ok(mut digit) = rating.parse::<u8>() {
+                            if digit > 10 {
+                                digit = 10;
                             }
-                            return self
-                        }
-                        UIEvent::Key(_) => return self,
-                        _ => {}
-                    }
-                }
 
-                LongCommand::EditStatus(id, ref coll, ref mut current) => {
-                    match ev {
-                        UIEvent::Key(Key::Char('\t')) => {
-                            *current = current.rotate();
-                            return self;
-                        }
-                        UIEvent::Key(Key::Char('\n')) => {
-                            app.update_collection_detail(id, current.clone(), coll.clone());
-
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        UIEvent::Key(_) => {
-                            self.command = LongCommand::Absent;
-                            return self;
-                        }
-                        _ => {}
-                    }
-                }
-
-                LongCommand::SearchInput(ref mut staging) => {
-                    match ev {
-                        UIEvent::Key(Key::Char('\n')) => {
-                            let cloned = staging.to_string();
-                            if let Tab::Search{ ref mut text } = self.active_tab_mut() {
-                                *text = cloned;
+                            if coll.rating != digit {
+                                let mut coll = coll.clone();
+                                coll.rating = digit;
+                                app.update_collection_detail(id, coll.status.clone(), Some(coll));
                             }
-                            self.command = LongCommand::Absent;
-                            return self;
                         }
-                        UIEvent::Key(Key::Backspace) => {
-                            staging.pop();
-                            return self;
-                        }
-                        UIEvent::Key(Key::Char(c)) => {
-                            staging.push(c);
-                            return self
-                        }
-                        UIEvent::Key(_) => return self,
-                        _ => {}
+
+                        self.command = LongCommand::Absent;
+                        return self;
                     }
-                }
+                    UIEvent::Key(Key::Backspace) => {
+                        rating.pop();
+                        return self;
+                    }
+                    UIEvent::Key(Key::Char(c @ '0'...'9')) => {
+                        if rating == "" || (rating == "1" && c == '0') {
+                            rating.push(c);
+                        } else if rating == "0" {
+                            *rating = c.to_string();
+                        }
+                        return self;
+                    }
+                    UIEvent::Key(_) => return self,
+                    _ => {}
+                },
+
+                LongCommand::EditStatus(id, ref coll, ref mut current) => match ev {
+                    UIEvent::Key(Key::Char('\t')) => {
+                        *current = current.rotate();
+                        return self;
+                    }
+                    UIEvent::Key(Key::Char('\n')) => {
+                        app.update_collection_detail(id, current.clone(), coll.clone());
+
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    UIEvent::Key(_) => {
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    _ => {}
+                },
+
+                LongCommand::SearchInput(ref mut staging) => match ev {
+                    UIEvent::Key(Key::Char('\n')) => {
+                        let cloned = staging.to_string();
+                        if let Tab::Search { ref mut text } = self.active_tab_mut() {
+                            *text = cloned;
+                        }
+                        self.command = LongCommand::Absent;
+                        return self;
+                    }
+                    UIEvent::Key(Key::Backspace) => {
+                        staging.pop();
+                        return self;
+                    }
+                    UIEvent::Key(Key::Char(c)) => {
+                        staging.push(c);
+                        return self;
+                    }
+                    UIEvent::Key(_) => return self,
+                    _ => {}
+                },
 
                 _ => {}
             }
@@ -983,13 +1058,17 @@ impl<'u> UIState<'u> {
         match ev {
             UIEvent::Key(Key::Ctrl('q')) => self.pending = Some(PendingUIEvent::Quit),
 
-            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_collection() => {
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j'))
+                if self.active_tab().is_collection() =>
+            {
                 self.focus.next();
                 if let Some(f) = self.focus.get() {
                     self.pending = Some(PendingUIEvent::ScrollIntoView(f));
                 }
             }
-            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_collection() => {
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k'))
+                if self.active_tab().is_collection() =>
+            {
                 self.focus.prev();
                 if let Some(f) = self.focus.get() {
                     self.pending = Some(PendingUIEvent::ScrollIntoView(f));
@@ -998,7 +1077,9 @@ impl<'u> UIState<'u> {
             UIEvent::Key(Key::Char('t')) if self.active_tab().is_collection() => {
                 self.command = LongCommand::Toggle;
             }
-            UIEvent::Key(Key::Char('+')) if self.active_tab().is_collection() && self.focus.get().is_some() => {
+            UIEvent::Key(Key::Char('+'))
+                if self.active_tab().is_collection() && self.focus.get().is_some() =>
+            {
                 let focus = self.focus.get().unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
@@ -1012,7 +1093,9 @@ impl<'u> UIState<'u> {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('-')) if self.active_tab().is_collection() && self.focus.get().is_some() => {
+            UIEvent::Key(Key::Char('-'))
+                if self.active_tab().is_collection() && self.focus.get().is_some() =>
+            {
                 let focus = self.focus.get().unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
@@ -1026,7 +1109,9 @@ impl<'u> UIState<'u> {
                     app.update_progress(t, ep, vol);
                 }
             }
-            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_collection() && self.focus.get().is_some() => {
+            UIEvent::Key(Key::Char('\n'))
+                if self.active_tab().is_collection() && self.focus.get().is_some() =>
+            {
                 let focus = self.focus.get().unwrap();
                 let collection = app.fetch_collection().into();
                 let target = self.do_filter(&collection).skip(focus).next();
@@ -1035,7 +1120,11 @@ impl<'u> UIState<'u> {
                     self.goto_detail(t.subject.id);
                 }
             }
-            UIEvent::Key(Key::Esc) if self.active_tab().is_collection() && self.focus.get().is_some() => self.focus.set(None),
+            UIEvent::Key(Key::Esc)
+                if self.active_tab().is_collection() && self.focus.get().is_some() =>
+            {
+                self.focus.set(None)
+            }
 
             UIEvent::Key(Key::Char('s')) if self.active_tab().is_subject() => {
                 let id = self.active_tab().subject_id().unwrap();
@@ -1062,7 +1151,11 @@ impl<'u> UIState<'u> {
                 if let FetchResult::Direct(Some(mut coll)) = app.fetch_collection_detail(id) {
                     let initial = coll.tag.join("\n");
                     if let Ok(Some(content)) = self.edit(&initial, app) {
-                        let segs = content.lines().filter(|e| e.len() > 0).map(|e| e.to_string()).collect::<Vec<String>>();
+                        let segs = content
+                            .lines()
+                            .filter(|e| e.len() > 0)
+                            .map(|e| e.to_string())
+                            .collect::<Vec<String>>();
                         coll.tag = segs;
                         app.update_collection_detail(id, coll.status.clone(), Some(coll));
                     }
@@ -1081,15 +1174,21 @@ impl<'u> UIState<'u> {
                 }
             }
 
-            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_subject() =>
-                if let Tab::Subject{ ref mut scroll, .. } = self.active_tab_mut() {
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j'))
+                if self.active_tab().is_subject() =>
+            {
+                if let Tab::Subject { ref mut scroll, .. } = self.active_tab_mut() {
                     scroll.delta(1)
                 }
+            }
 
-            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_subject() =>
-                if let Tab::Subject{ ref mut scroll, .. } = self.active_tab_mut() {
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k'))
+                if self.active_tab().is_subject() =>
+            {
+                if let Tab::Subject { ref mut scroll, .. } = self.active_tab_mut() {
                     scroll.delta(-1)
                 }
+            }
 
             UIEvent::Key(Key::Esc) if self.active_tab().is_subject() => self.close_tab(self.tab),
 
@@ -1098,7 +1197,7 @@ impl<'u> UIState<'u> {
                     if text == "" {
                         self.command = LongCommand::SearchInput(String::new());
                     } else {
-                        self.replace_tab(Tab::SearchResult{
+                        self.replace_tab(Tab::SearchResult {
                             search: text.clone(),
                             index: 0,
                             scroll: Default::default(),
@@ -1114,27 +1213,44 @@ impl<'u> UIState<'u> {
                 }
             }
 
-            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j')) if self.active_tab().is_search_result() =>
-                if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
+            UIEvent::Key(Key::Down) | UIEvent::Key(Key::Char('j'))
+                if self.active_tab().is_search_result() =>
+            {
+                if let Tab::SearchResult { ref mut focus, .. } = self.active_tab_mut() {
                     focus.next();
                     if let Some(f) = focus.get() {
                         self.pending = Some(PendingUIEvent::ScrollIntoView(f));
                     }
                 }
+            }
 
-            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k')) if self.active_tab().is_search_result() =>
-                if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
+            UIEvent::Key(Key::Up) | UIEvent::Key(Key::Char('k'))
+                if self.active_tab().is_search_result() =>
+            {
+                if let Tab::SearchResult { ref mut focus, .. } = self.active_tab_mut() {
                     focus.prev();
                     if let Some(f) = focus.get() {
                         self.pending = Some(PendingUIEvent::ScrollIntoView(f));
                     }
                 }
+            }
 
-            UIEvent::Key(Key::Char('\n')) if self.active_tab().is_search_result() && self.active_tab().get_focus().is_some() => {
-                if let Tab::SearchResult{ ref search, index, ref focus, .. } = self.active_tab() {
+            UIEvent::Key(Key::Char('\n'))
+                if self.active_tab().is_search_result()
+                    && self.active_tab().get_focus().is_some() =>
+            {
+                if let Tab::SearchResult {
+                    ref search,
+                    index,
+                    ref focus,
+                    ..
+                } = self.active_tab()
+                {
                     let focus = focus.get().unwrap();
                     let result: Option<_> = app.fetch_search(search, *index).into();
-                    let target = result.as_ref().and_then(|result: &PopulatedSearchResult| result.list.iter().skip(focus).next());
+                    let target = result.as_ref().and_then(|result: &PopulatedSearchResult| {
+                        result.list.iter().skip(focus).next()
+                    });
 
                     if let Some(t) = target {
                         self.goto_detail(t.id);
@@ -1142,20 +1258,23 @@ impl<'u> UIState<'u> {
                 }
             }
 
-            UIEvent::Key(Key::Esc) if self.active_tab().is_search_result() && self.active_tab().get_focus().is_some() => {
-                if let Tab::SearchResult{ ref mut focus, .. } = self.active_tab_mut() {
+            UIEvent::Key(Key::Esc)
+                if self.active_tab().is_search_result()
+                    && self.active_tab().get_focus().is_some() =>
+            {
+                if let Tab::SearchResult { ref mut focus, .. } = self.active_tab_mut() {
                     focus.set(None);
                 }
             }
 
             UIEvent::Key(Key::Char('n')) if self.active_tab().is_search_result() => {
-                if let Tab::SearchResult{ ref mut index, .. } = self.active_tab_mut() {
+                if let Tab::SearchResult { ref mut index, .. } = self.active_tab_mut() {
                     *index += 1;
                 }
             }
 
             UIEvent::Key(Key::Char('N')) if self.active_tab().is_search_result() => {
-                if let Tab::SearchResult{ ref mut index, .. } = self.active_tab_mut() {
+                if let Tab::SearchResult { ref mut index, .. } = self.active_tab_mut() {
                     if *index > 0 {
                         *index -= 1;
                     }
@@ -1164,35 +1283,39 @@ impl<'u> UIState<'u> {
 
             UIEvent::Key(Key::Char('\t')) => self.rotate_tab(),
             UIEvent::Key(Key::Char('g')) => self.command = LongCommand::Graphical,
-            UIEvent::Key(Key::Char('G')) => 
-                match self.active_tab_mut() {
-                    Tab::Collection => {
-                        self.scroll.set(std::u16::MAX - 1000);
-                        self.focus.set(Some(std::usize::MAX));
-                    }
-                    Tab::Subject{ ref mut scroll, .. } => {
-                        scroll.set(std::u16::MAX - 1000);
-                    }
-                    Tab::SearchResult{ ref mut scroll, ref mut focus, .. } => {
-                        scroll.set(std::u16::MAX - 1000);
-                        focus.set(Some(std::usize::MAX));
-                    }
-                    _ => {}
+            UIEvent::Key(Key::Char('G')) => match self.active_tab_mut() {
+                Tab::Collection => {
+                    self.scroll.set(std::u16::MAX - 1000);
+                    self.focus.set(Some(std::usize::MAX));
                 }
-            UIEvent::Key(Key::Char('R')) => 
-                match self.active_tab_mut() {
-                    Tab::Collection => {
-                        app.refresh_collection();
-                    }
-                    Tab::Subject{ id, .. } => {
-                        app.refresh_subject(*id);
-                        app.refresh_collection_detail(*id);
-                    }
-                    Tab::SearchResult{ ref search, index, .. } => {
-                        app.refresh_search(search.clone(), *index);
-                    }
-                    _ => {}
+                Tab::Subject { ref mut scroll, .. } => {
+                    scroll.set(std::u16::MAX - 1000);
                 }
+                Tab::SearchResult {
+                    ref mut scroll,
+                    ref mut focus,
+                    ..
+                } => {
+                    scroll.set(std::u16::MAX - 1000);
+                    focus.set(Some(std::usize::MAX));
+                }
+                _ => {}
+            },
+            UIEvent::Key(Key::Char('R')) => match self.active_tab_mut() {
+                Tab::Collection => {
+                    app.refresh_collection();
+                }
+                Tab::Subject { id, .. } => {
+                    app.refresh_subject(*id);
+                    app.refresh_collection_detail(*id);
+                }
+                Tab::SearchResult {
+                    ref search, index, ..
+                } => {
+                    app.refresh_search(search.clone(), *index);
+                }
+                _ => {}
+            },
             UIEvent::Key(Key::Char(':')) => self.command = LongCommand::Command(String::new()),
             UIEvent::Key(Key::Char('?')) | UIEvent::Key(Key::Char('h')) => self.help = !self.help,
             UIEvent::Key(Key::Char('J')) if self.help => self.help_scroll.delta(1),
@@ -1257,7 +1380,13 @@ impl<'u> UIState<'u> {
             }
         }
 
-        self.tab = self.open_tab(Tab::Subject{ id, scroll: ScrollState::default() }, None);
+        self.tab = self.open_tab(
+            Tab::Subject {
+                id,
+                scroll: ScrollState::default(),
+            },
+            None,
+        );
     }
 
     pub fn needs_help(&self) -> bool {
@@ -1270,7 +1399,7 @@ impl<'u> UIState<'u> {
      * this will effectively blocks the rendering, so bgmTTY won't interfere with
      * whatever editor the user uses
      */
-    pub fn edit(&mut self, content: &str, app: &mut AppState) -> std::io::Result<Option<String>>  {
+    pub fn edit(&mut self, content: &str, app: &mut AppState) -> std::io::Result<Option<String>> {
         self.pending = Some(PendingUIEvent::Reset);
 
         let mut temp = tempfile::NamedTempFile::new()?;
@@ -1279,9 +1408,14 @@ impl<'u> UIState<'u> {
 
         let status = {
             let _guard = self.stdin_lock.lock().unwrap();
-            let result = std::process::Command::new(&self.args.editor).arg(path.deref()).status();
+            let result = std::process::Command::new(&self.args.editor)
+                .arg(path.deref())
+                .status();
             if result.is_err() {
-                app.publish_message("找不到编辑器啦！参数 -e 指定编辑器，或者试试 Vim 嘛？".to_string());
+                app.publish_message(
+                    "找不到编辑器啦！参数 -e 指定编辑器，或者试试 Vim 嘛？"
+                        .to_string(),
+                );
             }
             result?
         };

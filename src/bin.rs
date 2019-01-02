@@ -1,12 +1,12 @@
 #![feature(const_slice_len)]
 #![feature(const_fn)]
 
-mod widgets;
-mod state;
 mod help;
-use crate::widgets::*;
-use crate::state::*;
+mod state;
+mod widgets;
 use crate::help::*;
+use crate::state::*;
+use crate::widgets::*;
 
 use bgmtv::auth::{request_code, request_token, AppCred, AuthResp};
 use bgmtv::client::{Client, CollectionStatus, SubjectType};
@@ -17,16 +17,16 @@ use crossbeam_channel::{unbounded, Select, Sender};
 use dirs;
 use failure::Error;
 use futures::future::Future;
+use serde_yaml;
 use std::convert::AsRef;
-use std::io::{BufRead, Write, Read};
+use std::fs::File;
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use termion;
 use termion::raw::IntoRawMode;
 use tokio;
 use tui;
-use std::sync::{Arc, Mutex};
-use serde_yaml;
-use std::fs::File;
 
 #[derive(Clone)]
 pub struct Args {
@@ -34,7 +34,7 @@ pub struct Args {
     config: PathBuf,
 }
 
-trait SettingsExt : Sized {
+trait SettingsExt: Sized {
     fn load_from<P: AsRef<Path>>(file: P) -> Result<Self, Error>;
     fn save_to<P: AsRef<Path>>(&self, file: P) -> Result<(), Error>;
 }
@@ -152,8 +152,7 @@ fn new_auth(settings: Settings, config: &Path) -> Result<Settings, ()> {
             _ => {
                 println!(
                     "{}",
-                    &"获取 Token 失败！请检查您的 Client ID/secret 并重试。"
-                        .red()
+                    &"获取 Token 失败！请检查您的 Client ID/secret 并重试。".red()
                 );
                 futures::future::err(())
             }
@@ -185,8 +184,7 @@ fn refresh_auth(settings: Settings, config: &Path) -> Result<Settings, ()> {
             _ => {
                 println!(
                     "{}",
-                    &"刷新 Token 失败！请检查您的 Client ID/secret 并重试。"
-                        .red()
+                    &"刷新 Token 失败！请检查您的 Client ID/secret 并重试。".red()
                 );
                 futures::future::err(())
             }
@@ -239,8 +237,14 @@ fn main() {
         .get_matches();
 
     let args = Args {
-        editor: matches.value_of("editor").unwrap_or_else(|| "vim").to_string(),
-        config: matches.value_of("config").map(Into::into).unwrap_or_else(|| default_path()),
+        editor: matches
+            .value_of("editor")
+            .unwrap_or_else(|| "vim")
+            .to_string(),
+        config: matches
+            .value_of("config")
+            .map(Into::into)
+            .unwrap_or_else(|| default_path()),
     };
 
     if matches.is_present("init") {
@@ -254,26 +258,19 @@ fn main() {
             println!("{}", e);
             println!(
                 "{}",
-                "看上去这是您第一次使用 bgmTTY，或者"
-                    .yellow()
+                "看上去这是您第一次使用 bgmTTY，或者".yellow()
             );
-            println!(
-                "{}",
-                "bgmTTY 没法打开配置文件。\n"
-                    .yellow()
-            );
+            println!("{}", "bgmTTY 没法打开配置文件。\n".yellow());
 
             println!("您可以带参数 --init 启动 bgmTTY 来创建一个新的配置文件，或者");
-            println!(
-                "将已有的配置文件放到 {}",
-                args.config.display()
-            );
+            println!("将已有的配置文件放到 {}", args.config.display());
             std::process::exit(1);
         }
     };
 
     if matches.is_present("logout") {
-        settings.logout()
+        settings
+            .logout()
             .save_to(&args.config)
             .expect(&"Failed to save config!".red());
 
@@ -295,7 +292,10 @@ fn main() {
     let settings = if let Ok(s) = settings {
         s
     } else {
-        println!("{}", "验证失败！可能是风把网线刮断了？".red());
+        println!(
+            "{}",
+            "验证失败！可能是风把网线刮断了？".red()
+        );
         std::process::exit(1);
     };
 
@@ -383,7 +383,7 @@ impl CollectionStatusExt for CollectionStatus {
     }
 }
 
-trait SubjectTypeExt : Sized {
+trait SubjectTypeExt: Sized {
     fn disp(&self) -> &'static str;
 }
 
@@ -447,10 +447,7 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
             let primary_chunk = if ui.help {
                 let primary_split = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Percentage(80),
-                        Constraint::Percentage(20),
-                    ].as_ref())
+                    .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
                     .split(cursize);
 
                 let mut help_block = Block::default().borders(Borders::LEFT);
@@ -497,11 +494,14 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Min(0),
-                    Constraint::Length(1),
-                ].as_ref())
+                .constraints(
+                    [
+                        Constraint::Length(3),
+                        Constraint::Min(0),
+                        Constraint::Length(1),
+                    ]
+                    .as_ref(),
+                )
                 .split(primary_chunk);
 
             let mut tab_block = Block::default().borders(Borders::ALL).title("bgmTTY");
@@ -509,7 +509,8 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
             let tab_inner = tab_block.inner(chunks[0]);
             let tab_names = ui.tabs.iter().map(|e| e.disp(&app)).collect::<Vec<_>>();
             let tab_name_borrows = tab_names.iter().map(|e| e.as_str()).collect::<Vec<_>>();
-            let mut tabber = Tabber::with(tab_name_borrows.as_slice(), &mut ui.tab_scroll).select(ui.tab);
+            let mut tabber =
+                Tabber::with(tab_name_borrows.as_slice(), &mut ui.tab_scroll).select(ui.tab);
             tabber.set_bound(tab_inner);
             tabber.cap_bound();
             tabber.render(&mut f, tab_inner);
@@ -531,9 +532,13 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
             }
 
             let needs_help = ui.needs_help();
-            let status = ui.command.prompt().unwrap_or_else(|| if needs_help {
-                "按 h 可以打开帮助哦".to_string()
-            } else { app.last_message() });
+            let status = ui.command.prompt().unwrap_or_else(|| {
+                if needs_help {
+                    "按 h 可以打开帮助哦".to_string()
+                } else {
+                    app.last_message()
+                }
+            });
             let mut status_line = CJKText::new(&status);
             let status_inner = chunks[2].padding_hoz(1);
             status_line.render(&mut f, status_inner);
@@ -550,9 +555,26 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                     let mut filter_block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     filter_block.render(&mut f, subchunks[0]);
                     // Draw custom corners
-                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(subchunks[0].x, subchunks[0].y-1, 1, 1));
-                    SingleCell::new(tui::symbols::line::HORIZONTAL_DOWN).render(&mut f, Rect::new(subchunks[0].x + subchunks[0].width - 1, subchunks[0].y-1, 1, 1));
-                    SingleCell::new(tui::symbols::line::HORIZONTAL_UP).render(&mut f, Rect::new(subchunks[0].x + subchunks[0].width - 1, subchunks[0].y+subchunks[0].height-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT)
+                        .render(&mut f, Rect::new(subchunks[0].x, subchunks[0].y - 1, 1, 1));
+                    SingleCell::new(tui::symbols::line::HORIZONTAL_DOWN).render(
+                        &mut f,
+                        Rect::new(
+                            subchunks[0].x + subchunks[0].width - 1,
+                            subchunks[0].y - 1,
+                            1,
+                            1,
+                        ),
+                    );
+                    SingleCell::new(tui::symbols::line::HORIZONTAL_UP).render(
+                        &mut f,
+                        Rect::new(
+                            subchunks[0].x + subchunks[0].width - 1,
+                            subchunks[0].y + subchunks[0].height - 1,
+                            1,
+                            1,
+                        ),
+                    );
                     let filter_inner = filter_block.inner(subchunks[0]).padding_hoz(1);
                     let filter_names = SELECTS
                         .iter()
@@ -564,16 +586,19 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
 
                     let count;
                     if let FetchResult::Direct(ref collection) = collection {
-                        count = SELECTS.iter().map(|t| {
-                            let mut c = 0;
-                            for ent in collection {
-                                if &ent.subject.subject_type == t {
-                                    c += 1;
+                        count = SELECTS
+                            .iter()
+                            .map(|t| {
+                                let mut c = 0;
+                                for ent in collection {
+                                    if &ent.subject.subject_type == t {
+                                        c += 1;
+                                    }
                                 }
-                            }
 
-                            c
-                        }).collect::<Vec<usize>>();
+                                c
+                            })
+                            .collect::<Vec<usize>>();
 
                         filters = filters.counting(&count);
                     }
@@ -591,9 +616,18 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                         }
                     }
 
-                    let mut outer = Block::default().borders(Borders::ALL ^ Borders::TOP ^ Borders::LEFT);
+                    let mut outer =
+                        Block::default().borders(Borders::ALL ^ Borders::TOP ^ Borders::LEFT);
                     outer.render(&mut f, subchunks[1]);
-                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(subchunks[1].x + subchunks[1].width - 1, subchunks[1].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(
+                        &mut f,
+                        Rect::new(
+                            subchunks[1].x + subchunks[1].width - 1,
+                            subchunks[1].y - 1,
+                            1,
+                            1,
+                        ),
+                    );
 
                     if let FetchResult::Direct(collection) = collection {
                         // Sync app state into ui state
@@ -664,11 +698,15 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                     };
                 }
 
-                Tab::Search{ ref text } => {
+                Tab::Search { ref text } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
-                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
-                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT)
+                        .render(&mut f, Rect::new(chunks[1].x, chunks[1].y - 1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(
+                        &mut f,
+                        Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y - 1, 1, 1),
+                    );
                     let inner = block.inner(chunks[1]);
 
                     let input = inner.center(inner.width - 2, 5);
@@ -678,7 +716,8 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
 
                     let mut text_comp = if text != "" {
                         let mut text_comp = CJKText::new(text);
-                        text_comp.set_style(tui::style::Style::default().fg(tui::style::Color::White));
+                        text_comp
+                            .set_style(tui::style::Style::default().fg(tui::style::Color::White));
                         text_comp
                     } else {
                         CJKText::new("按 e 或 Enter 开始输入，然后双击 Enter 搜索")
@@ -686,11 +725,18 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                     text_comp.render(&mut f, input_inner);
                 }
 
-                Tab::Subject{ id, scroll: ref mut scroll_val } => {
+                Tab::Subject {
+                    id,
+                    scroll: ref mut scroll_val,
+                } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
-                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
-                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT)
+                        .render(&mut f, Rect::new(chunks[1].x, chunks[1].y - 1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(
+                        &mut f,
+                        Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y - 1, 1, 1),
+                    );
                     let inner = block.inner(chunks[1]).padding_left(1);
 
                     use tui::style::*;
@@ -706,14 +752,17 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                         FetchResult::Direct((detail, subject)) => {
                             let mut scroll = Scroll::with(scroll_val);
 
-                            let mut subject_text = CJKText::raw([
-                                (subject.name.as_str(), Style::default().fg(Color::Yellow)),
-                                ("\n", Style::default()),
-                                (subject.name_cn.as_str(), Style::default().fg(Color::White)),
-                                ("\n\n", Style::default()),
-                                (subject.summary.as_str(), Style::default()),
-                                ("\n\n", Style::default()),
-                            ].to_vec());
+                            let mut subject_text = CJKText::raw(
+                                [
+                                    (subject.name.as_str(), Style::default().fg(Color::Yellow)),
+                                    ("\n", Style::default()),
+                                    (subject.name_cn.as_str(), Style::default().fg(Color::White)),
+                                    ("\n\n", Style::default()),
+                                    (subject.summary.as_str(), Style::default()),
+                                    ("\n\n", Style::default()),
+                                ]
+                                .to_vec(),
+                            );
 
                             scroll.push(&mut subject_text);
 
@@ -734,33 +783,34 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                                 };
                                 tag = detail_cont.tag.join(", ");
 
-                                detail_text = CJKText::raw([
-                                    ("状态: ", Style::default().fg(Color::Blue)),
-                                    (status, Style::default()),
-
-                                    ("\n", Style::default()),
-
-                                    ("评分: ", Style::default().fg(Color::Blue)),
-                                    (&score, Style::default()),
-
-                                    ("\n", Style::default()),
-
-                                    ("标签: ", Style::default().fg(Color::Blue)),
-                                    (&tag, Style::default()),
-
-                                    ("\n\n", Style::default()),
-                                    ("评论: ", Style::default().fg(Color::Blue)),
-                                ].to_vec());
+                                detail_text = CJKText::raw(
+                                    [
+                                        ("状态: ", Style::default().fg(Color::Blue)),
+                                        (status, Style::default()),
+                                        ("\n", Style::default()),
+                                        ("评分: ", Style::default().fg(Color::Blue)),
+                                        (&score, Style::default()),
+                                        ("\n", Style::default()),
+                                        ("标签: ", Style::default().fg(Color::Blue)),
+                                        (&tag, Style::default()),
+                                        ("\n\n", Style::default()),
+                                        ("评论: ", Style::default().fg(Color::Blue)),
+                                    ]
+                                    .to_vec(),
+                                );
 
                                 comment = CJKText::new(&detail_cont.comment);
 
                                 scroll.push(&mut detail_text);
                                 scroll.push(&mut comment);
                             } else {
-                                detail_text = CJKText::raw([
-                                    ("状态: ", Style::default().fg(Color::Blue)),
-                                    ("没打算", Style::default()),
-                                ].to_vec());
+                                detail_text = CJKText::raw(
+                                    [
+                                        ("状态: ", Style::default().fg(Color::Blue)),
+                                        ("没打算", Style::default()),
+                                    ]
+                                    .to_vec(),
+                                );
 
                                 scroll.push(&mut detail_text);
                             }
@@ -789,13 +839,21 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                     }
                 }
 
-                Tab::SearchResult{ ref search, index, scroll: ref mut scroll_val, ref mut focus } => {
+                Tab::SearchResult {
+                    ref search,
+                    index,
+                    scroll: ref mut scroll_val,
+                    ref mut focus,
+                } => {
                     let mut block = Block::default().borders(Borders::ALL ^ Borders::TOP);
                     block.render(&mut f, chunks[1]);
-                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT).render(&mut f, Rect::new(chunks[1].x, chunks[1].y-1, 1, 1));
-                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(&mut f, Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y-1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_RIGHT)
+                        .render(&mut f, Rect::new(chunks[1].x, chunks[1].y - 1, 1, 1));
+                    SingleCell::new(tui::symbols::line::VERTICAL_LEFT).render(
+                        &mut f,
+                        Rect::new(chunks[1].x + chunks[1].width - 1, chunks[1].y - 1, 1, 1),
+                    );
                     let inner = block.inner(chunks[1]);
-
 
                     match app.fetch_search(search, *index) {
                         FetchResult::Deferred => {
@@ -813,35 +871,47 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                             let count = result.count.to_string();
                             let visible = result.list.len().to_string();
                             let lower = (*index * SEARCH_PAGING + 1).to_string();
-                            let upper = std::cmp::min(result.count as usize, (1+*index) * SEARCH_PAGING).to_string();
+                            let upper =
+                                std::cmp::min(result.count as usize, (1 + *index) * SEARCH_PAGING)
+                                    .to_string();
 
                             let mut heading = if result.count == 0 {
-                                CJKText::raw([
-                                    (search.as_str(), Style::default().fg(Color::Green)),
-                                    ("\n", Style::default()),
-                                    ("这里是", Style::default()),
-                                    ("没有猫咪", Style::default().fg(Color::Yellow)),
-                                    ("的荒原\n\n是不是越界了?", Style::default()),
-                                ].to_vec())
+                                CJKText::raw(
+                                    [
+                                        (search.as_str(), Style::default().fg(Color::Green)),
+                                        ("\n", Style::default()),
+                                        ("这里是", Style::default()),
+                                        ("没有猫咪", Style::default().fg(Color::Yellow)),
+                                        ("的荒原\n\n是不是越界了?", Style::default()),
+                                    ]
+                                    .to_vec(),
+                                )
                             } else {
-                                CJKText::raw([
-                                    (search.as_str(), Style::default().fg(Color::Green)),
-                                    ("\n", Style::default()),
-                                    (count.as_str(), Style::default().fg(Color::Yellow)),
-                                    (" 结果，", Style::default()),
-                                    (lower.as_str(), Style::default().fg(Color::Yellow)),
-                                    (" - ", Style::default()),
-                                    (upper.as_str(), Style::default().fg(Color::Yellow)),
-                                    ("，", Style::default()),
-                                    (visible.as_str(), Style::default().fg(Color::Yellow)),
-                                    (" 可见", Style::default()),
-                                ].to_vec())
+                                CJKText::raw(
+                                    [
+                                        (search.as_str(), Style::default().fg(Color::Green)),
+                                        ("\n", Style::default()),
+                                        (count.as_str(), Style::default().fg(Color::Yellow)),
+                                        (" 结果，", Style::default()),
+                                        (lower.as_str(), Style::default().fg(Color::Yellow)),
+                                        (" - ", Style::default()),
+                                        (upper.as_str(), Style::default().fg(Color::Yellow)),
+                                        ("，", Style::default()),
+                                        (visible.as_str(), Style::default().fg(Color::Yellow)),
+                                        (" 可见", Style::default()),
+                                    ]
+                                    .to_vec(),
+                                )
                             };
 
                             let mut scroll = Scroll::with(scroll_val);
                             scroll.push(&mut heading);
 
-                            let mut ents = result.list.iter().map(ViewingEntry::with_subject).collect::<Vec<_>>();
+                            let mut ents = result
+                                .list
+                                .iter()
+                                .map(ViewingEntry::with_subject)
+                                .collect::<Vec<_>>();
 
                             if let Some(focus) = focus.get().and_then(|focus| ents.get_mut(focus)) {
                                 focus.select(true);
@@ -858,7 +928,7 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                             scroll.render(&mut f, inner);
 
                             if let Some(PendingUIEvent::ScrollIntoView(index)) = pending {
-                                scroll.scroll_into_view(index+1);
+                                scroll.scroll_into_view(index + 1);
                             }
 
                             if let Some(PendingUIEvent::Click(x, y, btn)) = pending {
@@ -873,12 +943,14 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
                                         Some(ScrollEvent::ScrollDown) => {
                                             scroll_val.delta(1);
                                         }
-                                        Some(ScrollEvent::Sub(i)) if i > 0 => match ents[i-1].intercept(x, y, btn) {
+                                        Some(ScrollEvent::Sub(i)) if i > 0 => match ents[i - 1]
+                                            .intercept(x, y, btn)
+                                        {
                                             Some(ViewingEntryEvent::Click) => {
-                                                if focus.get() == Some(i-1) && is_double_click {
-                                                    ui.goto_detail(result.list[i-1].id);
+                                                if focus.get() == Some(i - 1) && is_double_click {
+                                                    ui.goto_detail(result.list[i - 1].id);
                                                 } else {
-                                                    focus.set(Some(i-1));
+                                                    focus.set(Some(i - 1));
                                                 }
                                             }
                                             _ => {}
@@ -932,7 +1004,6 @@ fn bootstrap(client: Client, args: Args) -> Result<(), failure::Error> {
     Ok(())
 }
 
-
 fn kickoff_listener(tx: Sender<UIEvent>, stdin_lock: Arc<Mutex<()>>) {
     use std::io;
     use std::thread;
@@ -947,7 +1018,8 @@ fn kickoff_listener(tx: Sender<UIEvent>, stdin_lock: Arc<Mutex<()>>) {
         for ev in stdin.events() {
             if let Ok(ev) = ev {
                 if last_backoff.is_some()
-                    && last_backoff.unwrap() + control_sequence_backoff > std::time::Instant::now() {
+                    && last_backoff.unwrap() + control_sequence_backoff > std::time::Instant::now()
+                {
                     continue;
                 }
 
@@ -964,7 +1036,9 @@ fn kickoff_listener(tx: Sender<UIEvent>, stdin_lock: Arc<Mutex<()>>) {
                     println!("{}", e);
                 }
             }
-            { let _guard = stdin_lock.lock().unwrap(); }
+            {
+                let _guard = stdin_lock.lock().unwrap();
+            }
         }
     });
 }

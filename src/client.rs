@@ -139,10 +139,7 @@ struct ProgressPayload {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum APIResp<T> {
-    Error {
-        code: u16,
-        error: String,
-    },
+    Error { code: u16, error: String },
     Success(T),
 }
 
@@ -226,21 +223,17 @@ impl Client {
         id: u64,
     ) -> impl Future<Item = Option<CollectionDetail>, Error = failure::Error> {
         let c = req::Client::new();
-        c.get(&format!(
-            "{}/collection/{}",
-            API_ROOT!(),
-            id
-        ))
-        .apply_auth(self)
-        .send()
-        .and_then(|mut resp| resp.json())
-        .map(|resp: APIResp<CollectionDetail>| {
-            match resp {
-                APIResp::Error{ .. } => None, // TODO: handle other errors
-                APIResp::Success(payload) => Some(payload),
-            }
-        })
-        .map_err(|e| e.into())
+        c.get(&format!("{}/collection/{}", API_ROOT!(), id))
+            .apply_auth(self)
+            .send()
+            .and_then(|mut resp| resp.json())
+            .map(|resp: APIResp<CollectionDetail>| {
+                match resp {
+                    APIResp::Error { .. } => None, // TODO: handle other errors
+                    APIResp::Success(payload) => Some(payload),
+                }
+            })
+            .map_err(|e| e.into())
     }
 
     pub fn update_collection_detail(
@@ -259,35 +252,29 @@ impl Client {
             payload.insert("tags", content.tag.join(","));
         }
 
-        c.post(&format!(
-            "{}/collection/{}/update",
-            API_ROOT!(),
-            id,
-        ))
-        .form(&payload)
-        .apply_auth(self)
-        .send()
-        .and_then(|mut resp| resp.json())
-        .map_err(|e| e.into())
+        c.post(&format!("{}/collection/{}/update", API_ROOT!(), id,))
+            .form(&payload)
+            .apply_auth(self)
+            .send()
+            .and_then(|mut resp| resp.json())
+            .map_err(|e| e.into())
     }
 
-    pub fn subject(
-        &self,
-        id: u64,
-    ) -> impl Future<Item = SubjectSmall, Error = failure::Error> {
+    pub fn subject(&self, id: u64) -> impl Future<Item = SubjectSmall, Error = failure::Error> {
         let c = req::Client::new();
-        c.get(&format!(
-            "{}/subject/{}",
-            API_ROOT!(),
-            id
-        ))
-        .apply_auth(self)
-        .send()
-        .and_then(|mut resp| resp.json())
-        .map_err(|e| e.into())
+        c.get(&format!("{}/subject/{}", API_ROOT!(), id))
+            .apply_auth(self)
+            .send()
+            .and_then(|mut resp| resp.json())
+            .map_err(|e| e.into())
     }
 
-    pub fn progress(&self, coll: &CollectionEntry, ep: Option<u64>, vol: Option<u64>) -> impl Future<Item = (), Error = failure::Error> {
+    pub fn progress(
+        &self,
+        coll: &CollectionEntry,
+        ep: Option<u64>,
+        vol: Option<u64>,
+    ) -> impl Future<Item = (), Error = failure::Error> {
         let ep = ep.unwrap_or(coll.ep_status);
         let vol = vol.unwrap_or(coll.vol_status);
 
@@ -313,7 +300,12 @@ impl Client {
         .map_err(|e| e.into())
     }
 
-    pub fn search(&self, keywords: &str, len: usize, skip: usize) -> impl Future<Item = SearchResult, Error = failure::Error> {
+    pub fn search(
+        &self,
+        keywords: &str,
+        len: usize,
+        skip: usize,
+    ) -> impl Future<Item = SearchResult, Error = failure::Error> {
         let keywords = itertools::join(form_urlencoded::byte_serialize(keywords.as_bytes()), "");
 
         let c = req::Client::new();
@@ -327,14 +319,12 @@ impl Client {
         .apply_auth(self)
         .send()
         .and_then(|mut resp| resp.json())
-        .map(|resp: APIResp<SearchResultRaw>| {
-            match resp {
-                APIResp::Success(r) => SearchResult{
-                    count: r.count,
-                    list: r.list.unwrap_or_else(Vec::new),
-                },
-                APIResp::Error{ .. } => SearchResult::default(),
-            }
+        .map(|resp: APIResp<SearchResultRaw>| match resp {
+            APIResp::Success(r) => SearchResult {
+                count: r.count,
+                list: r.list.unwrap_or_else(Vec::new),
+            },
+            APIResp::Error { .. } => SearchResult::default(),
         })
         .map_err(|e| e.into())
     }

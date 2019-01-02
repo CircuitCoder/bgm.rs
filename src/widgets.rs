@@ -1,4 +1,6 @@
-use bgmtv::client::{CollectionEntry, SubjectType, SubjectSmall};
+use crate::state::ScrollState;
+use crate::SubjectTypeExt;
+use bgmtv::client::{CollectionEntry, SubjectSmall, SubjectType};
 use termion::event::MouseButton;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
@@ -8,8 +10,6 @@ use tui::widgets::Widget;
 use tui::widgets::{Block, Borders};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-use crate::SubjectTypeExt;
-use crate::state::ScrollState;
 
 pub trait DynHeight: Widget {
     fn height(&self, width: u16) -> u16;
@@ -67,10 +67,10 @@ impl<'a> Scroll<'a> {
 
         let mut start = 0;
         for i in 0..index {
-            start += self.content[i].height(self.bound.width-1);
+            start += self.content[i].height(self.bound.width - 1);
         }
 
-        let end = start + self.content[index].height(self.bound.width-1);
+        let end = start + self.content[index].height(self.bound.width - 1);
 
         let new_offset = if start < self.scroll.get() {
             start
@@ -168,7 +168,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
             _ => {}
         }
 
-        let h = self.inner_height(self.bound.width-1);
+        let h = self.inner_height(self.bound.width - 1);
 
         if x == self.bound.x + self.bound.width - 1 {
             // Scrollbar
@@ -190,7 +190,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
             let mut y = y - self.bound.y + self.scroll.get();
 
             for i in 0..self.content.len() {
-                let h = self.content[i].height(self.bound.width-1);
+                let h = self.content[i].height(self.bound.width - 1);
                 if h > y {
                     return Some(ScrollEvent::Sub(i));
                 }
@@ -209,7 +209,7 @@ impl<'a> Intercept<ScrollEvent> for Scroll<'a> {
     fn cap_bound(&mut self) {
         let area = &self.bound;
 
-        let new_height = self.inner_height(area.width-1);
+        let new_height = self.inner_height(area.width - 1);
         if new_height <= area.height {
             self.scroll.set(0);
         } else if new_height <= area.height + self.scroll.get() {
@@ -224,11 +224,15 @@ pub struct CJKText<'a> {
 
 impl<'a> CJKText<'a> {
     pub fn new(text: &'a str) -> Self {
-        Self { content: [(text, Style::default())].to_vec() }
+        Self {
+            content: [(text, Style::default())].to_vec(),
+        }
     }
 
     pub fn raw<T: Into<Vec<(&'a str, Style)>>>(content: T) -> Self {
-        Self { content: content.into() }
+        Self {
+            content: content.into(),
+        }
     }
 
     pub fn oneline_min_width(&self) -> u16 {
@@ -282,7 +286,7 @@ impl<'a> Widget for CJKText<'a> {
                 }
 
                 if dy >= area.height {
-                    return
+                    return;
                 }
 
                 buf.get_mut(dx + area.x, dy + area.y)
@@ -351,36 +355,42 @@ pub struct ViewingEntry<'a> {
 
 impl<'a> ViewingEntry<'a> {
     pub fn progress(&self) -> Option<ViewProgress> {
-        self.coll.map(|coll| {
-            match self.subject.subject_type {
-                SubjectType::Book => ViewProgress::new(
-                    self.subject.vols_count,
-                    coll.vol_status,
-                ),
-                _ => ViewProgress::new(
-                    self.subject.eps_count,
-                    coll.ep_status,
-                ),
-            }
+        self.coll.map(|coll| match self.subject.subject_type {
+            SubjectType::Book => ViewProgress::new(self.subject.vols_count, coll.vol_status),
+            _ => ViewProgress::new(self.subject.eps_count, coll.ep_status),
         })
     }
 
-    pub fn apply_text<R, F>(&'a self, cb: F) -> R 
-        where for<'b> F: FnOnce(CJKText<'b>) -> R {
-            let id = self.subject.id.to_string();
+    pub fn apply_text<R, F>(&'a self, cb: F) -> R
+    where
+        for<'b> F: FnOnce(CJKText<'b>) -> R,
+    {
+        let id = self.subject.id.to_string();
 
-            let text = CJKText::raw([
-                (self.subject.subject_type.disp(), Style::default().fg(Color::Blue)),
+        let text = CJKText::raw(
+            [
+                (
+                    self.subject.subject_type.disp(),
+                    Style::default().fg(Color::Blue),
+                ),
                 (" ", Style::default()),
                 (&id, Style::default()),
                 ("\n\n", Style::default()),
-                (self.subject.name.as_str(), Style::default().fg(Color::Yellow)),
+                (
+                    self.subject.name.as_str(),
+                    Style::default().fg(Color::Yellow),
+                ),
                 ("\n", Style::default()),
-                (self.subject.name_cn.as_str(), Style::default().fg(Color::White)),
-            ].to_vec());
+                (
+                    self.subject.name_cn.as_str(),
+                    Style::default().fg(Color::White),
+                ),
+            ]
+            .to_vec(),
+        );
 
-            cb(text)
-        }
+        cb(text)
+    }
 
     pub fn with_coll(ent: &'a CollectionEntry) -> Self {
         Self {
@@ -440,7 +450,7 @@ impl<'a> Widget for ViewingEntry<'a> {
 impl<'a> DynHeight for ViewingEntry<'a> {
     fn height(&self, width: u16) -> u16 {
         if width <= 2 {
-            return 0
+            return 0;
         }
 
         2 + self.apply_text(|t| t.height(width - 2))
@@ -489,7 +499,9 @@ impl<'a> Tabber<'a> {
     }
 
     pub fn inner_width(&self) -> u16 {
-        self.tabs.iter().fold(0, |acc, x| acc + CJKText::new(x).oneline_min_width() + 2)
+        self.tabs
+            .iter()
+            .fold(0, |acc, x| acc + CJKText::new(x).oneline_min_width() + 2)
     }
 
     pub fn scroll_into_view(&mut self, index: usize) {
@@ -532,7 +544,8 @@ impl<'a> Widget for Tabber<'a> {
 
             let width = text.oneline_min_width();
 
-            if viewport.width + scroll <= dx { // Already overflow
+            if viewport.width + scroll <= dx {
+                // Already overflow
                 break;
             }
 
@@ -544,7 +557,6 @@ impl<'a> Widget for Tabber<'a> {
 
             // We cannot overflow the viewport here, because width is bounded
             for y in 0..viewport.height {
-
                 let mut is_start = true;
 
                 for x in 0..width {
@@ -562,7 +574,6 @@ impl<'a> Widget for Tabber<'a> {
                     } else {
                         is_start = false;
                     }
-
                 }
             }
 
@@ -592,7 +603,7 @@ impl<'a> Intercept<TabberEvent> for Tabber<'a> {
                 match btn {
                     MouseButton::Left => {
                         return Some(TabberEvent::Select(i));
-                    },
+                    }
                     MouseButton::Middle => {
                         return Some(TabberEvent::Close(i));
                     }
@@ -671,13 +682,19 @@ impl<'a> Widget for FilterList<'a> {
                 Style::default()
             };
 
-            let count = self.count.and_then(|count| count.get(i)).map(|count| format!("({})", count));
+            let count = self
+                .count
+                .and_then(|count| count.get(i))
+                .map(|count| format!("({})", count));
             let mut text = if let Some(ref count) = count {
-                CJKText::raw([
-                    (*tab, text_style),
-                    (" ", Style::default()),
-                    (count, Style::default().fg(Color::Yellow)),
-                ].to_vec())
+                CJKText::raw(
+                    [
+                        (*tab, text_style),
+                        (" ", Style::default()),
+                        (count, Style::default().fg(Color::Yellow)),
+                    ]
+                    .to_vec(),
+                )
             } else {
                 let mut t = CJKText::new(tab);
                 t.set_style(text_style);
@@ -699,13 +716,19 @@ impl<'a> Intercept<FilterListEvent> for FilterList<'a> {
         let mut counter = 0;
         for (i, tab) in self.tabs.iter().enumerate() {
             let width = self.bound.width - 2;
-            let count = self.count.and_then(|count| count.get(i)).map(|count| format!("({})", count));
+            let count = self
+                .count
+                .and_then(|count| count.get(i))
+                .map(|count| format!("({})", count));
             let text = if let Some(ref count) = count {
-                CJKText::raw([
-                    (*tab, Style::default()),
-                    (" ", Style::default()),
-                    (count, Style::default()),
-                ].to_vec())
+                CJKText::raw(
+                    [
+                        (*tab, Style::default()),
+                        (" ", Style::default()),
+                        (count, Style::default()),
+                    ]
+                    .to_vec(),
+                )
             } else {
                 CJKText::new(tab)
             };
@@ -737,10 +760,8 @@ impl ViewProgress {
 
     fn text_hint(&self) -> String {
         match self.total {
-            Some(total) => 
-                format!("{} / {}", self.current, total),
-            None =>
-                format!("{} / ?", self.current),
+            Some(total) => format!("{} / {}", self.current, total),
+            None => format!("{} / ?", self.current),
         }
     }
 }
@@ -785,7 +806,8 @@ impl DynHeight for ViewProgress {
         } else {
             let text = self.text_hint();
             let text_widget = CJKText::new(&text);
-            text_widget.height(width) + (self.total.unwrap_or(self.current + 1) as u16 + width - 1) / width
+            text_widget.height(width)
+                + (self.total.unwrap_or(self.current + 1) as u16 + width - 1) / width
         }
     }
 }

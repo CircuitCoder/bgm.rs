@@ -142,7 +142,10 @@ pub enum RequestCodeError {
 
 pub fn request_code(
     client_id: &str,
-) -> (String, impl Future<Item = (String, String), Error = RequestCodeError>) {
+) -> (
+    String,
+    impl Future<Item = (String, String), Error = RequestCodeError>,
+) {
     let port = 8478;
 
     let (p, c) = oneshot::channel::<String>();
@@ -170,10 +173,9 @@ pub fn request_code(
 
     (
         uri,
-        recv
-            .map_err(|_| RequestCodeError::Channel)
+        recv.map_err(|_| RequestCodeError::Channel)
             .join(server)
-            .map(|(result, _)| (result.deref().clone(), redirect))
+            .map(|(result, _)| (result.deref().clone(), redirect)),
     )
 }
 
