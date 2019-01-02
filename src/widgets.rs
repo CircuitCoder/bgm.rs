@@ -522,7 +522,6 @@ impl<'a> Widget for Tabber<'a> {
     fn draw(&mut self, viewport: Rect, buf: &mut Buffer) {
         let mut dx = 1;
         let scroll = self.scroll.get();
-        eprintln!("{}", scroll);
 
         for (i, tab) in self.tabs.iter().enumerate() {
             let mut text = CJKText::new(tab);

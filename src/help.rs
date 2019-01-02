@@ -48,7 +48,7 @@ fn is_search_result(ui: &UIState) -> bool {
     ui.active_tab().is_search_result()
 }
 
-pub const HELP_DATABASE: [HelpEntry; 32] = [
+pub const HELP_DATABASE: [HelpEntry; 34] = [
     // General
     HelpEntry(&["?", "h", ":help"], "康帮助", &|_| true),
     HelpEntry(&["K"], "向上滚动帮助", &|ui| ui.help),
@@ -69,6 +69,8 @@ pub const HELP_DATABASE: [HelpEntry; 32] = [
     HelpEntry(&["Esc"], "取消选择", &|ui| is_collection(ui) && ui.focus.get().is_some() && !ui.command.present()),
 
     // When in subject page
+    HelpEntry(&["k", "Up"], "向上滚动", &is_subject),
+    HelpEntry(&["j", "Down"], "向下滚动", &is_subject),
     HelpEntry(&["s"], "修改收藏状态", &is_subject),
     HelpEntry(&["r"], "修改评分", &is_subject),
     HelpEntry(&["t"], "修改标签", &is_subject),
